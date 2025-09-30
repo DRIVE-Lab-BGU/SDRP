@@ -13,7 +13,8 @@ import time
 
 from importlib.metadata import version, PackageNotFoundError
 # from pyRDDLGym_jax.core.planner import (
-from SDRP.planner import (
+# from SDRP.Planner import
+from planner import (
     JaxDeepReactivePolicy,
     JaxBackpropPlanner,
     JaxOfflineController,
