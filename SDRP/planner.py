@@ -3172,3 +3172,5 @@ class JaxOnlineController(BaseAgent):
         self.guess = None
         self.callback = None
 
+    # def evaluate(self):
+    #     pass
