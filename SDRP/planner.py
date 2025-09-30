@@ -56,6 +56,7 @@ import jax.random as random
 import numpy as np
 import optax
 import termcolor
+from pyRDDLGym import RDDLEnv
 from tqdm import tqdm, TqdmWarning
 import warnings
 
@@ -3101,6 +3102,90 @@ class JaxOfflineController(BaseAgent):
                 self.eval_hyperparams = callback['policy_hyperparams']
 
 
+    def evaluate(self, env: RDDLEnv, episodes: int = 1,
+                 verbose: bool = False, render: bool = False,
+                 seed: Optional[int] = None) -> Dict[str, float]:
+        '''Evaluates the current agent on the specified environment by simulating
+        roll-outs. Returns a dictionary of summary statistics of the returns
+        accumulated on the roll-outs.
+
+        :param env: the environment
+        :param episodes: how many episodes (trials) to perform
+        :param verbose: whether to print the transition information to console
+        at each step of the simulation
+        :param render: visualize the domain using the env internal visualizer
+        :param seed: optional RNG seed for the environment
+        '''
+
+        # check compatibility with environment
+        if env.vectorized != self.use_tensor_obs:
+            raise ValueError(f'RDDLEnv vectorized flag must match use_tensor_obs '
+                             f'of current policy, got {env.vectorized} and '
+                             f'{self.use_tensor_obs}, respectively.')
+
+        gamma = env.discount
+
+        # get terminal width
+        if verbose:
+            width = shutil.get_terminal_size().columns
+            sep_bar = '-' * width
+
+        # start simulation
+        history = np.zeros((episodes,))
+        for episode in range(episodes):
+
+            # restart episode
+            total_reward, cuml_gamma = 0.0, 1.0
+            self.reset()
+            state, _ = env.reset(seed=seed)
+
+            # printing
+            if verbose:
+                print(f'initial state = \n{self._format(state, width)}')
+
+            # simulate to end of horizon
+            for step in range(env.horizon):
+                if render:
+                    env.render()
+
+                # take a step in the environment
+                action = self.sample_action_eval(state)
+                next_state, reward, terminated, truncated, _ = env.step(action)
+                total_reward += reward * cuml_gamma
+                cuml_gamma *= gamma
+                done = terminated or truncated
+
+                # printing
+                if verbose:
+                    print(f'{sep_bar}\n'
+                          f'step   = {step}\n'
+                          f'action = \n{self._format(action, width)}\n'
+                          f'state  = \n{self._format(next_state, width)}\n'
+                          f'reward = {reward}\n'
+                          f'done   = {done}')
+                state = next_state
+                if done:
+                    break
+
+            if verbose:
+                print(f'\n'
+                      f'episode {episode + 1} ended with return {total_reward}\n'
+                      f'{"=" * width}')
+            history[episode] = total_reward
+
+            # set the seed on the first episode only
+            seed = None
+
+        # summary statistics
+        return {
+            'mean': np.mean(history),
+            'median': np.median(history),
+            'min': np.min(history),
+            'max': np.max(history),
+            'std': np.std(history)
+        }
+
+
 class JaxOnlineController(BaseAgent):
     '''A container class for a Jax controller continuously updated using state feedback.'''
 
@@ -3172,5 +3257,4 @@ class JaxOnlineController(BaseAgent):
         self.guess = None
         self.callback = None
 
-    # def evaluate(self):
-    #     pass
+
