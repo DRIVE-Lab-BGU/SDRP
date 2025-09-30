@@ -26,8 +26,9 @@ from SDRP.planner import (
 
 base_path = os.path.dirname(os.path.abspath(__file__))
 instance = "instance_3.rddl"
-domain_file = os.path.join(base_path, "instances", "domain.rddl")
-instance_file = os.path.join(base_path, "instances", instance)
+problem = "reservoir"
+domain_file = os.path.join(base_path, "instances", problem, "domain.rddl")
+instance_file = os.path.join(base_path, "instances", problem, instance)
 myEnv = pyRDDLGym.make(domain=domain_file,
                      instance=instance_file,
                      vectorized=True)
