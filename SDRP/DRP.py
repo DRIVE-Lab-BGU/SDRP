@@ -68,12 +68,14 @@ write_header = not os.path.exists(csv_file)
 # Open the file in append mode
 mode='w'
 csvfile = open(csv_file, mode=mode, newline='')
-writer = csv.DictWriter(csvfile, fieldnames=["eval_reward"])
+writer = csv.DictWriter(csvfile, fieldnames=["epoch", "eval_reward"])
 writer.writeheader()
 
-for r in range(len(cum)):
+# for r in range(len(cum)):
+for _, (key, value) in enumerate(cum.items(), start=0):
     row = {
-        'eval_reward': cum[r],
+        'epoch': key,
+        'eval_reward': value
     }
     writer.writerow(row)
 csvfile.close()
