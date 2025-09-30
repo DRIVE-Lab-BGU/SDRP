@@ -1,3 +1,6 @@
+import sys
+import os
+
 import pyRDDLGym
 import pyRDDLGym_jax
 import matplotlib
@@ -8,7 +11,8 @@ import numpy as np
 import time
 
 from importlib.metadata import version, PackageNotFoundError
-from pyRDDLGym_jax.core.planner import (
+# from pyRDDLGym_jax.core.planner import (
+from SDRP.planner import (
     JaxDeepReactivePolicy,
     JaxBackpropPlanner,
     JaxOfflineController,
@@ -19,15 +23,20 @@ from pyRDDLGym_jax.core.planner import (
 ###############################################
 #     Create the environment with config      #
 ###############################################
-base_path = "project/"
+
+base_path = os.path.abspath(__file__)
 instance = "instance_3.rddl"
-myEnv = pyRDDLGym.make(domain=base_path+"domain.rddl",
-                     instance=base_path+instance ,
+domain_file = os.path.join(base_path,"instances", "domain.rddl")
+instance_file = os.path.join(base_path,"instances", instance)
+myEnv = pyRDDLGym.make(domain=domain_file,
+                     instance=instance_file,
                      vectorized=True)
 
 
 # Create the planner for differentiable planning
-planner_args, _, train_args = load_config("project/Reservoir_DRP.cfg")
+config_file = os.path.join(base_path, "configs", "Reservoir_DRP.cfg")
+planner_args, _, train_args = load_config(config_file)
+# planner_args, _, train_args = load_config("project/Reservoir_DRP.cfg")
 planner = JaxBackpropPlanner(rddl=myEnv.model, **planner_args)
 # The agent wraps the planner and executes training/evaluation
 #agent   = JaxOfflineController(planner, **train_args)
@@ -37,7 +46,7 @@ planner = JaxBackpropPlanner(rddl=myEnv.model, **planner_args)
 #
 cum = {}
 start_time = time.time()
-for epo in range(100,4350,250):
+for epo in range(100,300,250):
     print(f'pass {time.time() - start_time } seconds')
     print("train on epochs :" , epo)
     agent=  JaxOfflineController(planner, **train_args, epochs = epo )
@@ -60,7 +69,7 @@ last_y = list(cum.values())[-1]
 plt.text(last_x, last_y, f"{last_y:.2f}", fontsize=10, ha='left', va='bottom')
 
 plt.show()
-d
+sys.exit()
 #
 # ###############################################
 # # Create a policy without using a config file #
