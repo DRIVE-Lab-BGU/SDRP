@@ -24,10 +24,10 @@ from SDRP.planner import (
 #     Create the environment with config      #
 ###############################################
 
-base_path = os.path.abspath(__file__)
+base_path = os.path.dirname(os.path.abspath(__file__))
 instance = "instance_3.rddl"
-domain_file = os.path.join(base_path,"instances", "domain.rddl")
-instance_file = os.path.join(base_path,"instances", instance)
+domain_file = os.path.join(base_path, "instances", "domain.rddl")
+instance_file = os.path.join(base_path, "instances", instance)
 myEnv = pyRDDLGym.make(domain=domain_file,
                      instance=instance_file,
                      vectorized=True)
@@ -36,7 +36,6 @@ myEnv = pyRDDLGym.make(domain=domain_file,
 # Create the planner for differentiable planning
 config_file = os.path.join(base_path, "configs", "Reservoir_DRP.cfg")
 planner_args, _, train_args = load_config(config_file)
-# planner_args, _, train_args = load_config("project/Reservoir_DRP.cfg")
 planner = JaxBackpropPlanner(rddl=myEnv.model, **planner_args)
 # The agent wraps the planner and executes training/evaluation
 #agent   = JaxOfflineController(planner, **train_args)
