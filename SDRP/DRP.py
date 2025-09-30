@@ -73,7 +73,7 @@ writer.writeheader()
 
 for r in range(len(cum)):
     row = {
-        'mean_eval_reward': cum[r],
+        'eval_reward': cum[r],
     }
     writer.writerow(row)
 csvfile.close()
