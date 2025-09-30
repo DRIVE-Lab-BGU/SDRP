@@ -1,10 +1,11 @@
 import sys
 import os
+import csv
 
 import pyRDDLGym
 import pyRDDLGym_jax
 import matplotlib
-matplotlib.use("TkAgg")
+
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
@@ -58,17 +59,42 @@ for epo in range(100,300,250):
 print(f'total time {time.time() - start_time} seconds')
 print(cum)
 basename = instance
-plt.figure(figsize=(8, 5))
-plt.plot(list(cum.keys()), list(cum.values()), marker='o')
-plt.xlabel("Epochs")
-plt.ylabel(f"Mean Reward over { 20 } episodes ")
-plt.title(f"Mean Reward vs Epochs,{basename} ,  horizon:{myEnv.horizon}  ")
-plt.grid(True)
-last_x = list(cum.keys())[-1]
-last_y = list(cum.values())[-1]
-plt.text(last_x, last_y, f"{last_y:.2f}", fontsize=10, ha='left', va='bottom')
 
-plt.show()
+
+
+csv_file = os.path.join(base_path, "log.csv")
+write_header = not os.path.exists(csv_file)
+
+# Open the file in append mode
+mode='w'
+csvfile = open(csv_file, mode=mode, newline='')
+writer = csv.DictWriter(csvfile, fieldnames=["eval_reward"])
+writer.writeheader()
+
+for r in range(len(cum)):
+    row = {
+        'mean_eval_reward': cum[r],
+    }
+    writer.writerow(row)
+csvfile.close()
+
+
+
+
+
+#
+#
+# plt.figure(figsize=(8, 5))
+# plt.plot(list(cum.keys()), list(cum.values()), marker='o')
+# plt.xlabel("Epochs")
+# plt.ylabel(f"Mean Reward over { 20 } episodes ")
+# plt.title(f"Mean Reward vs Epochs,{basename} ,  horizon:{myEnv.horizon}  ")
+# plt.grid(True)
+# last_x = list(cum.keys())[-1]
+# last_y = list(cum.values())[-1]
+# plt.text(last_x, last_y, f"{last_y:.2f}", fontsize=10, ha='left', va='bottom')
+
+# plt.show()
 sys.exit()
 #
 # ###############################################
