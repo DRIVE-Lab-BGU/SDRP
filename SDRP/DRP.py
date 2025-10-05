@@ -27,7 +27,7 @@ from planner import (
 ###############################################
 
 base_path = os.path.dirname(os.path.abspath(__file__))
-instance = "instance_4.rddl"
+instance = "instance_2.rddl"
 problem = "reservoir"
 domain_file = os.path.join(base_path, "instances", problem, "domain.rddl")
 instance_file = os.path.join(base_path, "instances", problem, instance)
@@ -63,7 +63,7 @@ basename = instance
 
 
 
-csv_file = os.path.join(base_path, f"log_{instance[0:-5]}_sd = 5.csv")
+csv_file = os.path.join(base_path, f"log_{instance[0:-5]}_sd = 1.csv")
 write_header = not os.path.exists(csv_file)
 
 # Open the file in append mode
