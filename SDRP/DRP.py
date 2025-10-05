@@ -63,7 +63,7 @@ basename = instance
 
 
 
-csv_file = os.path.join(base_path, "log.csv")
+csv_file = os.path.join(base_path, f"log_{instance[0:-5]}_sd = 0.csv")
 write_header = not os.path.exists(csv_file)
 
 # Open the file in append mode
