@@ -48,7 +48,7 @@ planner = JaxBackpropPlanner(rddl=myEnv.model, **planner_args)
 #
 cum = {}
 start_time = time.time()
-for epo in range(100,300,250):
+for epo in range(100,1000,250):
     print(f'pass {time.time() - start_time } seconds')
     print("train on epochs :" , epo)
     agent=  JaxOfflineController(planner, **train_args, epochs = epo )
