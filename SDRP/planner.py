@@ -3080,7 +3080,7 @@ class JaxOfflineController(BaseAgent):
             subkey, self.params, self.step, state, self.eval_hyperparams)
         self.step += 1
         for key in actions:
-            actions[key] = actions[key] + np.random.normal(loc=0, scale=0 , size=actions[key].shape)
+            actions[key] = actions[key] + np.random.normal(loc=0, scale=1 , size=actions[key].shape)
         return actions
 
     def sample_action_eval(self, state: Dict[str, Any]) -> Dict[str, Any]:
