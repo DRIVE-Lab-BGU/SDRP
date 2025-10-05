@@ -27,7 +27,7 @@ from planner import (
 ###############################################
 
 base_path = os.path.dirname(os.path.abspath(__file__))
-instance = "instance_3.rddl"
+instance = "instance_2.rddl"
 problem = "reservoir"
 domain_file = os.path.join(base_path, "instances", problem, "domain.rddl")
 instance_file = os.path.join(base_path, "instances", problem, instance)
@@ -48,7 +48,7 @@ planner = JaxBackpropPlanner(rddl=myEnv.model, **planner_args)
 #
 cum = {}
 start_time = time.time()
-for epo in range(100,1000,250):
+for epo in range(100,3500,250):
     print(f'pass {time.time() - start_time } seconds')
     print("train on epochs :" , epo)
     agent=  JaxOfflineController(planner, **train_args, epochs = epo )
