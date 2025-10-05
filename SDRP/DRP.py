@@ -27,7 +27,7 @@ from planner import (
 ###############################################
 
 base_path = os.path.dirname(os.path.abspath(__file__))
-instance = "instance_3.rddl"
+instance = "instance_4.rddl"
 problem = "reservoir"
 domain_file = os.path.join(base_path, "instances", problem, "domain.rddl")
 instance_file = os.path.join(base_path, "instances", problem, instance)
