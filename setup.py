@@ -24,7 +24,7 @@ setup(
       url="https://github.com/DRIVE-Lab-BGU/SDRP",
       packages=find_packages(),
       install_requires=['pyrddlgym', 'rddlrepository', 'pyrddlgym-jax==2.6', 'rddlrepository', 'numpy==1.26.4'],
-      python_requires=">=3.9,<3.11",
+      python_requires=">=3.9,<3.13",
       package_data={'': ['*.cfg', '*.rddl']},
       include_package_data=True,
       classifiers=[
