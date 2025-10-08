@@ -1,4 +1,3 @@
-import sys
 import os
 
 import pyRDDLGym
@@ -8,11 +7,10 @@ from pyRDDLGym_jax.core.planner import (
     load_config
 )
 
-from SDRP.policies import (
-    DeterministicJaxPolicy,
-    StochasticJaxPolicy
+from SDRP.core.policies import (
+    DeterministicJaxPolicy
 )
-from SDRP.Logger import Log
+from SDRP.core.Logger import Log
 
 
 class ExampleManager(object):
