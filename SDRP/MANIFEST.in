@@ -1,0 +1,2 @@
+recursive-include SDRP/instances *.rddl
+recursive-include pyRDDLGym/config *.cfg

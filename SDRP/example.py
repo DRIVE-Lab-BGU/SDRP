@@ -3,18 +3,6 @@ import sys
 from SDRP.ExampleManager import ExampleManager
 import os
 
-# import pyRDDLGym
-# import time
-# from pyRDDLGym_jax.core.planner import (
-#     JaxBackpropPlanner,
-#     load_config
-# )
-#
-# from SDRP.policies import (
-#     DeterministicJaxPolicy,
-#     StochasticJaxPolicy
-# )
-# from SDRP.Logger import Log
 
 def main(domain, instance, config, episodes=100, step=10):
     manager = ExampleManager(domain, instance, config, episodes, step)
@@ -22,6 +10,7 @@ def main(domain, instance, config, episodes=100, step=10):
     base_path = manager.get_base_path()
     log_file = os.path.join(base_path, 'logs', f"log_{instance[0:-5]}_sd = 1.csv")
     manager.log(log_file)
+
 
 # def main(domain, instance, config, episodes=100, step=10):
 #     base_path = os.path.dirname(os.path.abspath(__file__))

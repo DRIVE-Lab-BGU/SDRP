@@ -23,9 +23,9 @@ setup(
       license="MIT License",
       url="https://github.com/DRIVE-Lab-BGU/SDRP",
       packages=find_packages(),
-      install_requires=['pyrddlgym', 'rddlrepository', 'pyrddlgym-jax==2.6', 'numpy==1.26.4'],
+      install_requires=['pyrddlgym', 'rddlrepository', 'pyrddlgym-jax==2.6', 'rddlrepository', 'numpy==1.26.4'],
       python_requires=">=3.9,<3.11",
-      package_data={'': ['*.cfg']},
+      package_data={'': ['*.cfg', '*.rddl']},
       include_package_data=True,
       classifiers=[
         "Development Status :: 5 - Production/Stable",

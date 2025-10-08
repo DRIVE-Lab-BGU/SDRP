@@ -43,9 +43,6 @@ class ExampleManager(object):
             print(f'pass {time.time() - start_time} seconds')
             print("train on epochs :", epoch)
             agent = DeterministicJaxPolicy(planner, **train_args, epochs=epoch)
-            # episodes – number of evaluation episodes:
-            # For each episode, reset the env (env.reset), roll out the policy until the horizon or done=True
-            ## importent!!!!  i change the file policy for evaluate (matrics line 92 sample_action_eval(state) )
             metrics = agent.evaluate(myEnv, episodes=20)
             rewards[epoch] = metrics['mean']
         print(f'total time {time.time() - start_time} seconds')
