@@ -63,11 +63,11 @@ basename = instance
 
 
 
-csv_file = os.path.join(base_path, f"log_{instance[0:-5]}_sd = 1.csv")
+csv_file = os.path.join(base_path, 'logs', f"log_{instance[0:-5]}_sd = 1.csv")
 write_header = not os.path.exists(csv_file)
 
 # Open the file in append mode
-mode='w'
+mode = 'w'
 csvfile = open(csv_file, mode=mode, newline='')
 writer = csv.DictWriter(csvfile, fieldnames=["epoch", "eval_reward"])
 writer.writeheader()
