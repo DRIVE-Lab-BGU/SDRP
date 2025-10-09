@@ -31,9 +31,9 @@ base_path = os.path.dirname(os.path.abspath(__file__))
 ##################
 #### for run  ####
 ##################
-instance = "instance_3.rddl"
+instance = "instance_2.rddl"
 problem = "reservoir"
-sd_for_stoc = 3
+sd_for_stoc = 0
 pass_for_save = f"log_{instance[0:-5]}_sd = {sd_for_stoc}.csv"
 
 
