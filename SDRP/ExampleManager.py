@@ -1,4 +1,5 @@
 import os
+import sys
 
 import pyRDDLGym
 import time
@@ -41,6 +42,7 @@ class ExampleManager(object):
             print(f'pass {time.time() - start_time} seconds')
             print("train on epochs :", epoch)
             print("train args:", train_args)
+            sys.exit()
             agent = DeterministicJaxPolicy(planner, **train_args, epochs=epoch)
             metrics = agent.evaluate(myEnv, episodes=20)
             rewards[epoch] = metrics['mean']
