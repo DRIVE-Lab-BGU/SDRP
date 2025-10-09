@@ -3019,13 +3019,15 @@ class JaxOfflineController(BaseAgent):
 
     use_tensor_obs = True
 
+    # sd #
     def __init__(self, planner: JaxBackpropPlanner,
                  key: Optional[random.PRNGKey] = None,
                  eval_hyperparams: Optional[Dict[str, Any]] = None,
                  params: Optional[Union[str, Pytree]] = None,
                  train_on_reset: bool = False,
                  save_path: Optional[str] = None,
-                 **train_kwargs) -> None:
+                 sd=0,
+                 **train_kwargs ) -> None:
         '''Creates a new JAX offline control policy that is trained once, then
         deployed later.
 
@@ -3073,7 +3075,10 @@ class JaxOfflineController(BaseAgent):
                     pickle.dump(params, file)
 
         self.params = params
-
+        ###################################################################
+        #### Define the standard deviation of the stochastic part ####
+        ###################################################################
+        self.sd = sd
     def sample_action(self, state: Dict[str, Any]) -> Dict[str, Any]:
         self.key, subkey = random.split(self.key)
         actions = self.planner.get_action(
