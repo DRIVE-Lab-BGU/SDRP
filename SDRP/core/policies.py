@@ -189,9 +189,8 @@ class DeterministicJaxPolicy(JaxPolicy):
                  train_on_reset: bool = False,
                  save_path: Optional[str] = None,
                  **train_kwargs) -> None:
-        # super(DeterministicJaxPolicy, self).__init__(planner, key, eval_hyperparams, params, train_on_reset, save_path, train_kwargs)
-        print("train_kwargs", train_kwargs)
-        super().__init__(planner, key, eval_hyperparams, params, train_on_reset, save_path, **train_kwargs)
+        super(DeterministicJaxPolicy, self).__init__(planner, key, eval_hyperparams, params, train_on_reset, save_path, **train_kwargs)
+        # super().__init__(planner, key, eval_hyperparams, params, train_on_reset, save_path, **train_kwargs)
 
     def sample_action_eval(self, state: Dict[str, Any]) -> Dict[str, Any]:
         actions = self.sample_action(state)
