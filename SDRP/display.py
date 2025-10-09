@@ -8,8 +8,8 @@ import matplotlib.pyplot as plt
 import os
 
 base_path = os.path.dirname(os.path.abspath(__file__))
-deterministic_csv = 'reservoir_instance2_deterministic.csv'
-stochastic_csv = 'reservoir_instance2_stochastic.csv'
+deterministic_csv = 'reservoir_instance4_deterministic.csv'
+stochastic_csv = 'reservoir_instance4_stochastic.csv'
 
 #deterministic
 with open(os.path.join(base_path, 'logs', deterministic_csv), mode='r', newline='') as file:
