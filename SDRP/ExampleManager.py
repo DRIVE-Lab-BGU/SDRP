@@ -23,7 +23,6 @@ class ExampleManager(object):
         self.step = step
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         self.rewards = {}
-        print ("sdfsdfsf")
 
     def run_example(self,):
         domain_file = os.path.join(self.base_path, "instances", self.domain, "domain.rddl")
@@ -35,7 +34,6 @@ class ExampleManager(object):
                                vectorized=True)
 
         planner_args, _, train_args = load_config(config_file)
-        sys.exit()
         planner = JaxBackpropPlanner(rddl=myEnv.model, **planner_args)
 
         rewards = {}
