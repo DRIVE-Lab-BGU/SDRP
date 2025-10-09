@@ -23,6 +23,7 @@ class ExampleManager(object):
         self.step = step
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         self.rewards = {}
+        print ("sdfsdfsf")
 
     def run_example(self,):
         domain_file = os.path.join(self.base_path, "instances", self.domain, "domain.rddl")
