@@ -53,6 +53,7 @@ class JaxPolicy(BaseAgent):
         self.eval_hyperparams = eval_hyperparams
         self.train_on_reset = train_on_reset
         self.train_kwargs = train_kwargs
+        print(train_kwargs)
         self.params_given = params is not None
         self.hyperparams_given = eval_hyperparams is not None
 
