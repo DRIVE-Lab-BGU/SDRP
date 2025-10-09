@@ -190,6 +190,7 @@ class DeterministicJaxPolicy(JaxPolicy):
                  save_path: Optional[str] = None,
                  **train_kwargs) -> None:
         # super(DeterministicJaxPolicy, self).__init__(planner, key, eval_hyperparams, params, train_on_reset, save_path, train_kwargs)
+        print(train_kwargs)
         super().__init__(planner, key, eval_hyperparams, params, train_on_reset, save_path,
                                                      train_kwargs)
 

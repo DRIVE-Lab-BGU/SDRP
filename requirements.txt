@@ -1,4 +1,5 @@
 pyrddlgym
 rddlrepository
 pyrddlgym-jax==2.6
-numpy==1.26.4
+numpy==2.1
+dash
