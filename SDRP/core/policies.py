@@ -291,7 +291,7 @@ class StochasticJaxPolicy(DeterministicJaxPolicy):
                  save_path: Optional[str] = None,
                  **train_kwargs) -> None:
         super(StochasticJaxPolicy, self).__init__(planner, key, eval_hyperparams, params, train_on_reset, save_path,
-                                                     train_kwargs)
+                                                     **train_kwargs)
 
     def sample_action(self, state: Dict[str, Any]) -> Dict[str, Any]:
         self.key, subkey = random.split(self.key)
