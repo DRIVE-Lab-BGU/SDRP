@@ -31,9 +31,9 @@ base_path = os.path.dirname(os.path.abspath(__file__))
 ##################
 #### for run  ####
 ##################
-instance = "instance_2.rddl"
+instance = "instance_3.rddl"
 problem = "reservoir"
-sd_for_stoc = 8
+sd_for_stoc = 3
 pass_for_save = f"log_{instance[0:-5]}_sd = {sd_for_stoc}.csv"
 
 
@@ -94,7 +94,7 @@ for _, (key, value) in enumerate(cum.items(), start=0):
     writer.writerow(row)
 csvfile.close()
 
-
+print("end run")
 
 
 #
