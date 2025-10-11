@@ -65,7 +65,6 @@ class JaxPolicy(BaseAgent):
         # train the policy
         self.step = 0
         self.callback = None
-        print(self.train_kwargs)
         if not self.train_on_reset and not self.params_given:
             callback = self.planner.optimize(key=self.key, **self.train_kwargs)
             self.callback = callback

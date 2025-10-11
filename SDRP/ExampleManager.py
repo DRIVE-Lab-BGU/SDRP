@@ -36,6 +36,8 @@ class ExampleManager(object):
                                instance=instance_file,
                                vectorized=True)
 
+        self.rewards={}
+
         planner_args, _, train_args = load_config(config_file)
         self.planner = JaxBackpropPlanner(rddl=self.myEnv.model, **planner_args)
 
@@ -45,19 +47,22 @@ class ExampleManager(object):
             self.agent = StochasticJaxPolicy(self.planner, **train_args, exploration_noise=self.exploration_noise,
                                         epochs=2)
 
+        metrics = self.agent.evaluate(self.myEnv, episodes=20)
+        self.rewards[2] = metrics['mean']
+
     def run_example_delta(self):
-        rewards = {}
+        # rewards = {}
         start_time = time.time()
         for epoch in range(2, self.episodes + 1, self.step):
             print(f'pass {time.time() - start_time} seconds')
-            print("train on epochs :", epoch)
+            print("train on start epochs :", epoch)
             self.agent.train(self.step)
             metrics = self.agent.evaluate(self.myEnv, episodes=20)
-            rewards[epoch] = metrics['mean']
+            self.rewards[epoch+self.step] = metrics['mean']
         print(f'total time {time.time() - start_time} seconds')
-        print(rewards)
+        print(self.rewards)
 
-        self.rewards = rewards
+        # self.rewards = rewards
 
     def run_example(self):
         # domain_file = os.path.join(self.base_path, "instances", self.domain, "domain.rddl")
@@ -83,9 +88,9 @@ class ExampleManager(object):
             print("train on epochs :", epoch)
 
             if self.policy_type == 'deterministic':
-                agent = DeterministicJaxPolicy(planner, **train_args, epochs=epoch)
+                agent = DeterministicJaxPolicy(self.planner, **train_args, epochs=epoch)
             else:
-                agent = StochasticJaxPolicy(planner, **train_args, exploration_noise=self.exploration_noise,
+                agent = StochasticJaxPolicy(self.planner, **train_args, exploration_noise=self.exploration_noise,
                                             epochs=epoch)
 
             # agent = jax_policy(planner, **train_args, epochs=epoch)
