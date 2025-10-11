@@ -87,7 +87,7 @@ class JaxPolicy(BaseAgent):
         self.train_kwargs['epochs'] = epochs
         self.callback = None
         if not self.train_on_reset and not self.params_given:
-            callback = self.planner.optimize(key=self.key, model_params=self.params, **self.train_kwargs)
+            callback = self.planner.optimize(key=self.key, guess=self.params, **self.train_kwargs)
             self.callback = callback
             params = callback['best_params']
             if not self.hyperparams_given:
