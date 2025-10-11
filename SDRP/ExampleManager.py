@@ -29,17 +29,55 @@ class ExampleManager(object):
         self.policy_type = policy_type
         self.exploration_noise = exploration_noise
 
-    def run_example(self,):
         domain_file = os.path.join(self.base_path, "instances", self.domain, "domain.rddl")
         instance_file = os.path.join(self.base_path, "instances", self.domain, self.instance)
         config_file = os.path.join(self.base_path, "configs", self.config)
-
-        myEnv = pyRDDLGym.make(domain=domain_file,
+        self.myEnv = pyRDDLGym.make(domain=domain_file,
                                instance=instance_file,
                                vectorized=True)
 
         planner_args, _, train_args = load_config(config_file)
-        planner = JaxBackpropPlanner(rddl=myEnv.model, **planner_args)
+        self.planner = JaxBackpropPlanner(rddl=self.myEnv.model, **planner_args)
+        if self.policy_type == 'deterministic':
+            self.agent = DeterministicJaxPolicy(self.planner, **train_args, epochs=1)
+        else:
+            self.agent = StochasticJaxPolicy(self.planner, **train_args, exploration_noise=self.exploration_noise,
+                                        epochs=1)
+
+    def run_example_delta(self):
+        rewards = {}
+        start_time = time.time()
+        for epoch in range(2, self.episodes + 1, self.step):
+            print(f'pass {time.time() - start_time} seconds')
+            print("train on epochs :", epoch)
+
+            # if self.policy_type == 'deterministic':
+            #     agent = DeterministicJaxPolicy(planner, **train_args, epochs=self.step)
+            # else:
+            #     agent = StochasticJaxPolicy(planner, **train_args, exploration_noise=self.exploration_noise,
+            #                                 epochs=epoch)
+
+            # agent = jax_policy(planner, **train_args, epochs=epoch)
+            self.agent.train()
+            metrics = agent.evaluate(myEnv, episodes=20)
+            rewards[epoch] = metrics['mean']
+        print(f'total time {time.time() - start_time} seconds')
+        print(rewards)
+
+        self.rewards = rewards
+
+    def run_example(self):
+        # domain_file = os.path.join(self.base_path, "instances", self.domain, "domain.rddl")
+        # instance_file = os.path.join(self.base_path, "instances", self.domain, self.instance)
+        # config_file = os.path.join(self.base_path, "configs", self.config)
+        #
+        # myEnv = pyRDDLGym.make(domain=domain_file,
+        #                        instance=instance_file,
+        #                        vectorized=True)
+
+        # planner_args, _, train_args = load_config(config_file)
+        # planner = JaxBackpropPlanner(rddl=myEnv.model, **planner_args)
+
         # if self.policy_type == 'deterministic':
         #     jax_policy = DeterministicJaxPolicy
         # else:
@@ -54,7 +92,8 @@ class ExampleManager(object):
             if self.policy_type == 'deterministic':
                 agent = DeterministicJaxPolicy(planner, **train_args, epochs=epoch)
             else:
-                agent = StochasticJaxPolicy(planner, **train_args, exploration_noise=2.0, epochs=epoch)
+                agent = StochasticJaxPolicy(planner, **train_args, exploration_noise=self.exploration_noise,
+                                            epochs=epoch)
 
             # agent = jax_policy(planner, **train_args, epochs=epoch)
             metrics = agent.evaluate(myEnv, episodes=20)
