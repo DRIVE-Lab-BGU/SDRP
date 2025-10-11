@@ -36,7 +36,7 @@ class ExampleManager(object):
                                instance=instance_file,
                                vectorized=True)
 
-        self.rewards={}
+        self.rewards = {}
 
         planner_args, _, train_args = load_config(config_file)
         self.planner = JaxBackpropPlanner(rddl=self.myEnv.model, **planner_args)

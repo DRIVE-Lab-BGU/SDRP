@@ -79,15 +79,15 @@ class JaxPolicy(BaseAgent):
                     pickle.dump(params, file)
 
         self.params = params
-        print(self.train_kwargs)
-        print(self.params)
-        sys.exit(0)
+        # print(self.train_kwargs)
+        # print(self.params)
+        # sys.exit(0)
 
     def train(self, epochs, save_path=None):
         self.train_kwargs['epochs'] = epochs
         self.callback = None
         if not self.train_on_reset and not self.params_given:
-            callback = self.planner.optimize(key=self.key, **self.train_kwargs)
+            callback = self.planner.optimize(key=self.key, model_params=self.params, **self.train_kwargs)
             self.callback = callback
             params = callback['best_params']
             if not self.hyperparams_given:
