@@ -58,7 +58,7 @@ class ExampleManager(object):
             train_episodes = self.episodes
         if interval is None:
             interval = self.step
-            for epoch in range(interval, train_episodes+1, interval):
+        for epoch in range(interval, train_episodes+1, interval):
         # for epoch in range(2, self.episodes + 1, self.step):
             print(f'pass {time.time() - start_time} seconds')
             print("train on start epochs :", epoch)
