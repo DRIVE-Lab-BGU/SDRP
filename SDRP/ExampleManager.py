@@ -40,10 +40,10 @@ class ExampleManager(object):
         self.planner = JaxBackpropPlanner(rddl=self.myEnv.model, **planner_args)
 
         if self.policy_type == 'deterministic':
-            self.agent = DeterministicJaxPolicy(self.planner, **train_args, epochs=1)
+            self.agent = DeterministicJaxPolicy(self.planner, **train_args, epochs=2)
         else:
             self.agent = StochasticJaxPolicy(self.planner, **train_args, exploration_noise=self.exploration_noise,
-                                        epochs=1)
+                                        epochs=2)
 
     def run_example_delta(self):
         rewards = {}
