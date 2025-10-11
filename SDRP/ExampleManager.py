@@ -16,7 +16,7 @@ from SDRP.core.Logger import Log
 
 
 class ExampleManager(object):
-    def __init__(self, domain, instance, config, policy_type="deterministic", episodes=10, step=10):
+    def __init__(self, domain, instance, config, policy_type="deterministic", episodes=10, step=10, exploration_noise=0.0):
         self.domain = domain
         self.instance = instance
         self.config = config
@@ -27,6 +27,7 @@ class ExampleManager(object):
         if policy_type not in ['deterministic', 'stochastic']:
             raise Exception("unknown planner type, planner must be either 'deterministic' or 'stochastic'")
         self.policy_type = policy_type
+        self.exploration_noise = exploration_noise
 
     def run_example(self,):
         domain_file = os.path.join(self.base_path, "instances", self.domain, "domain.rddl")
@@ -39,17 +40,23 @@ class ExampleManager(object):
 
         planner_args, _, train_args = load_config(config_file)
         planner = JaxBackpropPlanner(rddl=myEnv.model, **planner_args)
-        if self.policy_type == 'deterministic':
-            jax_policy = DeterministicJaxPolicy
-        else:
-            jax_policy = StochasticJaxPolicy
+        # if self.policy_type == 'deterministic':
+        #     jax_policy = DeterministicJaxPolicy
+        # else:
+        #     jax_policy = StochasticJaxPolicy
 
         rewards = {}
         start_time = time.time()
         for epoch in range(2, self.episodes+1, self.step):
             print(f'pass {time.time() - start_time} seconds')
             print("train on epochs :", epoch)
-            agent = jax_policy(planner, **train_args, epochs=epoch)
+
+            if self.policy_type == 'deterministic':
+                agent = DeterministicJaxPolicy(planner, **train_args, epochs=epoch)
+            else:
+                agent = StochasticJaxPolicy(planner, **train_args, exploration_noise=2.0, epochs=epoch)
+
+            # agent = jax_policy(planner, **train_args, epochs=epoch)
             metrics = agent.evaluate(myEnv, episodes=20)
             rewards[epoch] = metrics['mean']
         print(f'total time {time.time() - start_time} seconds')
