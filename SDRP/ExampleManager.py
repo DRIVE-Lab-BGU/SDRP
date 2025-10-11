@@ -37,9 +37,9 @@ class ExampleManager(object):
                                vectorized=True)
 
         planner_args, _, train_args = load_config(config_file)
-        print(planner_args)
-        sys.exit(0)
         self.planner = JaxBackpropPlanner(rddl=self.myEnv.model, **planner_args)
+        print(train_args)
+        sys.exit(0)
         if self.policy_type == 'deterministic':
             self.agent = DeterministicJaxPolicy(self.planner, **train_args, epochs=1)
         else:
