@@ -50,16 +50,8 @@ class ExampleManager(object):
         for epoch in range(2, self.episodes + 1, self.step):
             print(f'pass {time.time() - start_time} seconds')
             print("train on epochs :", epoch)
-
-            # if self.policy_type == 'deterministic':
-            #     agent = DeterministicJaxPolicy(planner, **train_args, epochs=self.step)
-            # else:
-            #     agent = StochasticJaxPolicy(planner, **train_args, exploration_noise=self.exploration_noise,
-            #                                 epochs=epoch)
-
-            # agent = jax_policy(planner, **train_args, epochs=epoch)
-            self.agent.train()
-            metrics = agent.evaluate(myEnv, episodes=20)
+            self.agent.train(self.step)
+            metrics = self.agent.evaluate(self.myEnv, episodes=20)
             rewards[epoch] = metrics['mean']
         print(f'total time {time.time() - start_time} seconds')
         print(rewards)
