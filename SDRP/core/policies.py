@@ -1,3 +1,4 @@
+import sys
 from typing import Any, Callable, Dict, Generator, Optional, Set, Sequence, Type, Tuple, \
     Union
 import time
@@ -78,6 +79,9 @@ class JaxPolicy(BaseAgent):
                     pickle.dump(params, file)
 
         self.params = params
+        print(self.train_kwargs)
+        print(self.params)
+        sys.exit(0)
 
     def train(self, epochs, save_path=None):
         self.train_kwargs['epochs'] = epochs
