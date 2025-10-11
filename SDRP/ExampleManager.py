@@ -64,7 +64,7 @@ class ExampleManager(object):
             print("train on start epochs :", epoch)
             self.agent.train(self.step)
             metrics = self.agent.evaluate(self.myEnv, episodes=20)
-            self.cur_epoch +=interval
+            self.cur_epoch += interval
             # self.rewards[epoch+self.step] = metrics['mean']
             self.rewards[self.cur_epoch] = metrics['mean']
         print(f'total time {time.time() - start_time} seconds')
