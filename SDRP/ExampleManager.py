@@ -40,25 +40,33 @@ class ExampleManager(object):
 
         planner_args, _, train_args = load_config(config_file)
         self.planner = JaxBackpropPlanner(rddl=self.myEnv.model, **planner_args)
+        self.cur_epoch = 2
 
         if self.policy_type == 'deterministic':
-            self.agent = DeterministicJaxPolicy(self.planner, **train_args, epochs=2)
+            self.agent = DeterministicJaxPolicy(self.planner, **train_args, epochs=self.cur_epoch)
         else:
             self.agent = StochasticJaxPolicy(self.planner, **train_args, exploration_noise=self.exploration_noise,
-                                        epochs=2)
+                                        epochs=self.cur_epoch)
 
         metrics = self.agent.evaluate(self.myEnv, episodes=20)
-        self.rewards[2] = metrics['mean']
+        self.rewards[self.cur_epoch] = metrics['mean']
 
-    def run_example_delta(self):
+    def run_example_delta(self, train_episodes=None, interval=None):
         # rewards = {}
         start_time = time.time()
-        for epoch in range(2, self.episodes + 1, self.step):
+        if train_episodes is None:
+            train_episodes = self.episodes
+        if interval is None:
+            interval = self.step
+            for epoch in range(interval, train_episodes+1, interval):
+        # for epoch in range(2, self.episodes + 1, self.step):
             print(f'pass {time.time() - start_time} seconds')
             print("train on start epochs :", epoch)
             self.agent.train(self.step)
             metrics = self.agent.evaluate(self.myEnv, episodes=20)
-            self.rewards[epoch+self.step] = metrics['mean']
+            self.cur_epoch +=interval
+            # self.rewards[epoch+self.step] = metrics['mean']
+            self.rewards[self.cur_epoch] = metrics['mean']
         print(f'total time {time.time() - start_time} seconds')
         print(self.rewards)
 
