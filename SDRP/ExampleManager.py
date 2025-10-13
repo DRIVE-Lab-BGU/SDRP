@@ -52,20 +52,18 @@ class ExampleManager(object):
         self.rewards[self.cur_epoch] = metrics['mean']
 
     def run_example_delta(self, train_episodes=None, interval=None):
-        # rewards = {}
         start_time = time.time()
         if train_episodes is None:
             train_episodes = self.episodes
         if interval is None:
             interval = self.step
-        for epoch in range(interval, train_episodes+1, interval):
-        # for epoch in range(2, self.episodes + 1, self.step):
+        start_epoch = self.cur_epoch
+        for epoch in range(start_epoch, start_epoch + train_episodes+1, interval):
             print(f'pass {time.time() - start_time} seconds')
             print("train on start epochs :", epoch)
             self.agent.train(self.step)
             metrics = self.agent.evaluate(self.myEnv, episodes=20)
             self.cur_epoch += interval
-            # self.rewards[epoch+self.step] = metrics['mean']
             self.rewards[self.cur_epoch] = metrics['mean']
         print(f'total time {time.time() - start_time} seconds')
         print(self.rewards)
