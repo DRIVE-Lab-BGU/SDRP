@@ -58,6 +58,7 @@ class JaxPolicy(BaseAgent):
         self.params_given = params is not None
         self.hyperparams_given = eval_hyperparams is not None
         self.exploration_noise = exploration_noise
+        print(self.exploration_noise)
 
         # load the policy from file
         if not self.train_on_reset and params is not None and isinstance(params, str):
