@@ -175,7 +175,7 @@ class JaxPolicy(BaseAgent):
                     env.render()
 
                 # take a step in the environment
-                action = self.sample_action(state)
+                action = self.sample_action_eval(state)
                 next_state, reward, terminated, truncated, _ = env.step(action)
                 total_reward += reward * cuml_gamma
                 cuml_gamma *= gamma
