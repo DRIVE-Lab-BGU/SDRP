@@ -106,8 +106,8 @@ class JaxPolicy(BaseAgent):
         print("in sample_action of JaxPolicy")
         actions = self.planner.get_action(
             subkey, self.params, self.step, state, self.eval_hyperparams)
-        # for key in actions:
-        #     actions[key] = actions[key] + np.random.normal(loc=0, scale=1, size=actions[key].shape)
+        for key in actions:
+            actions[key] = actions[key] + np.random.normal(loc=0, scale=1, size=actions[key].shape)
         self.step += 1
         return actions
 
