@@ -46,6 +46,7 @@ class ExampleManager(object):
                                vectorized=True)
 
         self.rewards = {}
+        self.stds = {}
 
         planner_args, _, train_args = load_config(config_file)
         self.planner = JaxBackpropPlanner(rddl=self.myEnv.model, **planner_args)
@@ -61,6 +62,7 @@ class ExampleManager(object):
 
         metrics = self.agent.evaluate(self.myEnv, episodes=20)
         self.rewards[self.cur_epoch] = metrics['mean']
+        self.stds[self.cur_epoch] = metrics['std']
 
     def run_example_delta(self, train_episodes=None, interval=None):
         start_time = time.time()
@@ -77,6 +79,7 @@ class ExampleManager(object):
             print(metrics)
             self.cur_epoch += interval
             self.rewards[self.cur_epoch] = metrics['mean']
+            self.stds[self.cur_epoch] = metrics['std']
         print(f'total time {time.time() - start_time} seconds')
         print(self.rewards)
 
@@ -123,7 +126,7 @@ class ExampleManager(object):
         if self.rewards:
             # log = Log(f"log_{self.instance[0:-5]}_sd = 1.csv")
             log = Log(file_name)
-            log.logData(self.rewards)
+            log.logData(self.rewards, self.stds)
 
     def get_base_path(self):
         return self.base_path
