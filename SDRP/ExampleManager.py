@@ -9,7 +9,7 @@ from pyRDDLGym_jax.core.planner import (
 )
 
 from SDRP.core.policies import (
-    DeterministicJaxPolicy,
+    # DeterministicJaxPolicy,
     StochasticJaxPolicy
 )
 from SDRP.core.Logger import Log
@@ -43,7 +43,8 @@ class ExampleManager(object):
         self.cur_epoch = 2
 
         if self.policy_type == 'deterministic':
-            self.agent = DeterministicJaxPolicy(self.planner, **train_args, epochs=self.cur_epoch)
+            # self.agent = DeterministicJaxPolicy(self.planner, **train_args, epochs=self.cur_epoch)
+            self.agent = StochasticJaxPolicy(self.planner, **train_args, epochs=self.cur_epoch)
         else:
             # self.agent = StochasticJaxPolicy(self.planner, **train_args, exploration_noise=self.exploration_noise,
             #                             epochs=self.cur_epoch)

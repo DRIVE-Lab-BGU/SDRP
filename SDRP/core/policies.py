@@ -54,7 +54,6 @@ class JaxPolicy(BaseAgent):
         self.eval_hyperparams = eval_hyperparams
         self.train_on_reset = train_on_reset
         self.train_kwargs = train_kwargs
-        # print(train_kwargs)
         self.params_given = params is not None
         self.hyperparams_given = eval_hyperparams is not None
 
@@ -79,9 +78,7 @@ class JaxPolicy(BaseAgent):
                     pickle.dump(params, file)
 
         self.params = params
-        # print(self.train_kwargs)
-        # print(self.params)
-        # sys.exit(0)
+
 
     def train(self, epochs, save_path=None):
         self.train_kwargs['epochs'] = epochs
@@ -205,7 +202,125 @@ class JaxPolicy(BaseAgent):
         }
 
 
-class DeterministicJaxPolicy(JaxPolicy):
+class StochasticJaxPolicy(JaxPolicy):
+    def __init__(self, planner: JaxBackpropPlanner,
+                 key: Optional[random.PRNGKey] = None,
+                 eval_hyperparams: Optional[Dict[str, Any]] = None,
+                 params: Optional[Union[str, Pytree]] = None,
+                 train_on_reset: bool = False,
+                 save_path: Optional[str] = None,
+                 **train_kwargs) -> None:
+        super(StochasticJaxPolicy, self).__init__(planner, key, eval_hyperparams, params, train_on_reset, save_path,
+                                                     **train_kwargs)
+
+    def sample_action(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        self.key, subkey = random.split(self.key)
+        actions = self.planner.get_action(
+            subkey, self.params, self.step, state, self.eval_hyperparams)
+        self.step += 1
+        print("testing noise in sample action (Stochastic class):")
+        for key in actions:
+            actions[key] = actions[key] + np.random.normal(loc=0, scale=1, size=actions[key].shape)
+        return actions
+
+    def sample_action_eval(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        self.key, subkey = random.split(self.key)
+        actions = self.planner.get_action(
+            subkey, self.params, self.step, state, self.eval_hyperparams)
+        self.step += 1
+        print("exploiting noise in sample action (Stochastic class):")
+        for key in actions:
+            actions[key] = actions[key]
+        return actions
+
+    def evaluate(self, env: RDDLEnv, episodes: int = 1,
+                 verbose: bool = False, render: bool = False,
+                 seed: Optional[int] = None) -> Dict[str, float]:
+        '''Evaluates the current agent on the specified environment by simulating
+        roll-outs. Returns a dictionary of summary statistics of the returns
+        accumulated on the roll-outs.
+
+        :param env: the environment
+        :param episodes: how many episodes (trials) to perform
+        :param verbose: whether to print the transition information to console
+        at each step of the simulation
+        :param render: visualize the domain using the env internal visualizer
+        :param seed: optional RNG seed for the environment
+        '''
+
+        # check compatibility with environment
+        if env.vectorized != self.use_tensor_obs:
+            raise ValueError(f'RDDLEnv vectorized flag must match use_tensor_obs '
+                             f'of current policy, got {env.vectorized} and '
+                             f'{self.use_tensor_obs}, respectively.')
+
+        gamma = env.discount
+
+        # get terminal width
+        if verbose:
+            width = shutil.get_terminal_size().columns
+            sep_bar = '-' * width
+
+        # start simulation
+        history = np.zeros((episodes,))
+        for episode in range(episodes):
+
+            # restart episode
+            total_reward, cuml_gamma = 0.0, 1.0
+            self.reset()
+            state, _ = env.reset(seed=seed)
+
+            # printing
+            if verbose:
+                print(f'initial state = \n{self._format(state, width)}')
+
+            # simulate to end of horizon
+            for step in range(env.horizon):
+                if render:
+                    env.render()
+
+                # take a step in the environment
+                action = self.sample_action_eval(state)
+                next_state, reward, terminated, truncated, _ = env.step(action)
+                total_reward += reward * cuml_gamma
+                cuml_gamma *= gamma
+                done = terminated or truncated
+
+                # printing
+                if verbose:
+                    print(f'{sep_bar}\n'
+                          f'step   = {step}\n'
+                          f'action = \n{self._format(action, width)}\n'
+                          f'state  = \n{self._format(next_state, width)}\n'
+                          f'reward = {reward}\n'
+                          f'done   = {done}')
+                state = next_state
+                if done:
+                    break
+
+            if verbose:
+                print(f'\n'
+                      f'episode {episode + 1} ended with return {total_reward}\n'
+                      f'{"=" * width}')
+            history[episode] = total_reward
+
+            # set the seed on the first episode only
+            seed = None
+
+        # summary statistics
+        return {
+            'mean': np.mean(history),
+            'median': np.median(history),
+            'min': np.min(history),
+            'max': np.max(history),
+            'std': np.std(history)
+        }
+
+
+
+
+
+class DeterministicJaxPolicy_dep(JaxPolicy):
     def __init__(self, planner: JaxBackpropPlanner,
                  key: Optional[random.PRNGKey] = None,
                  eval_hyperparams: Optional[Dict[str, Any]] = None,
@@ -304,7 +419,7 @@ class DeterministicJaxPolicy(JaxPolicy):
         }
 
 
-class StochasticJaxPolicy(DeterministicJaxPolicy):
+class StochasticJaxPolicy_dep(DeterministicJaxPolicy_dep):
 
     def __init__(self, planner: JaxBackpropPlanner,
                  key: Optional[random.PRNGKey] = None,
