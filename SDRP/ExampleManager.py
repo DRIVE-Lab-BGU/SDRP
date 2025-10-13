@@ -47,6 +47,7 @@ class ExampleManager(object):
         else:
             self.agent = StochasticJaxPolicy(self.planner, **train_args, exploration_noise=self.exploration_noise,
                                         epochs=self.cur_epoch)
+            self.agent = StochasticJaxPolicy(self.planner, **train_args, epochs=self.cur_epoch)
 
         metrics = self.agent.evaluate(self.myEnv, episodes=20)
         self.rewards[self.cur_epoch] = metrics['mean']
