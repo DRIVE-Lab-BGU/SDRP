@@ -58,7 +58,6 @@ class ExampleManager(object):
             # self.agent = StochasticJaxPolicy(self.planner, **train_args, exploration_noise=self.exploration_noise,
             #                             epochs=self.cur_epoch)
         self.agent = JaxPolicy(self.planner, **train_args, epochs=self.cur_epoch)
-        # self.agent = JaxOfflineController(self.planner, **train_args, epochs=episodes)
 
         metrics = self.agent.evaluate(self.myEnv, episodes=20)
         self.rewards[self.cur_epoch] = metrics['mean']
@@ -75,6 +74,7 @@ class ExampleManager(object):
             print("train on start epochs :", epoch)
             self.agent.train(self.step)
             metrics = self.agent.evaluate(self.myEnv, episodes=20)
+            print(metrics)
             self.cur_epoch += interval
             self.rewards[self.cur_epoch] = metrics['mean']
         print(f'total time {time.time() - start_time} seconds')
