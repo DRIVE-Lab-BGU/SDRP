@@ -312,12 +312,12 @@ class StochasticJaxPolicy(DeterministicJaxPolicy):
                  params: Optional[Union[str, Pytree]] = None,
                  train_on_reset: bool = False,
                  save_path: Optional[str] = None,
-                 exploration_noise: float = 1.0,
+                 # exploration_noise: float = 1.0,
                  **train_kwargs) -> None:
         super(StochasticJaxPolicy, self).__init__(planner, key, eval_hyperparams, params, train_on_reset, save_path,
                                                      **train_kwargs)
-        self.exploration_noise = exploration_noise
-        print("noise inside is:", self.exploration_noise)
+        # self.exploration_noise = exploration_noise
+        print("noise inside is")
         # add noise exploration noise param to this class signature
 
     def sample_action(self, state: Dict[str, Any]) -> Dict[str, Any]:
@@ -325,7 +325,7 @@ class StochasticJaxPolicy(DeterministicJaxPolicy):
         actions = self.planner.get_action(
             subkey, self.params, self.step, state, self.eval_hyperparams)
         self.step += 1
-        print("testing noise in sample action (Stochastic class):", self.exploration_noise)
+        print("testing noise in sample action (Stochastic class):")
         for key in actions:
             actions[key] = actions[key] + np.random.normal(loc=0, scale=self.exploration_noise, size=actions[key].shape)
         return actions
