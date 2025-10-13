@@ -9,6 +9,7 @@ import os
 
 header = ['epoch', 'eval_reward', 'eval_std']
 files = ['reservoir_instance3_deterministic_1000.csv', 'reservoir_instance3_stochastic1_1000.csv', 'reservoir_instance3_stochastic3_1000.csv']
+legend = ['deterministic', 'stochastic_1', 'stochastic_3']
 base_path = os.path.dirname(os.path.abspath(__file__))
 # deterministic_csv = 'reservoir_instance3_deterministic_1000.csv'
 # deterministic_csv = 'reservoir_instance3_stochastic1_1000.csv'
@@ -24,47 +25,48 @@ for file in files:
     epoch = []
     reward = []
     std = []
-      for row in csv_reader:
-        if row == header:
-          continue
-        epoch.append(row[0])
-        reward.append(row[1])
-        std.append(row[2])
-    plots[file] = {'epochs': epoch, 'reward': reward}
+    for row in csv_reader:
+      if row == header:
+        continue
+      epoch.append(row[0])
+      reward.append(row[1])
+      # std.append(row[2])
+  plots[file] = { 'epochs': epoch, 'reward': reward, 'std': std }
 
+sys.exit()
 
 
 #deterministic
-with open(os.path.join(base_path, 'logs', deterministic_csv), mode='r', newline='') as file:
-  csv_reader = csv.reader(file)
-  d_x_axis = []
-  d_y_axis = []
-  for row in csv_reader:
-    if row == header:
-      continue
-    d_x_axis.append(row[0])
-    d_y_axis.append(row[1])
-
-#stochastic
-with open(os.path.join(base_path, 'logs', stochastic1_csv), mode='r', newline='') as file:
-  csv_reader = csv.reader(file)
-  s_x_axis = []
-  s_y1_axis = []
-  for row in csv_reader:
-    if row == header:
-      continue
-    s_x_axis.append(row[0])
-    s_y1_axis.append(row[1])
-
-with open(os.path.join(base_path, 'logs', stochastic2_csv), mode='r', newline='') as file:
-  csv_reader = csv.reader(file)
-  s_x_axis = []
-  s_y2_axis = []
-  for row in csv_reader:
-    if row == header:
-      continue
-    s_x_axis.append(row[0])
-    s_y2_axis.append(row[1])
+# with open(os.path.join(base_path, 'logs', deterministic_csv), mode='r', newline='') as file:
+#   csv_reader = csv.reader(file)
+#   d_x_axis = []
+#   d_y_axis = []
+#   for row in csv_reader:
+#     if row == header:
+#       continue
+#     d_x_axis.append(row[0])
+#     d_y_axis.append(row[1])
+#
+# #stochastic
+# with open(os.path.join(base_path, 'logs', stochastic1_csv), mode='r', newline='') as file:
+#   csv_reader = csv.reader(file)
+#   s_x_axis = []
+#   s_y1_axis = []
+#   for row in csv_reader:
+#     if row == header:
+#       continue
+#     s_x_axis.append(row[0])
+#     s_y1_axis.append(row[1])
+#
+# with open(os.path.join(base_path, 'logs', stochastic2_csv), mode='r', newline='') as file:
+#   csv_reader = csv.reader(file)
+#   s_x_axis = []
+#   s_y2_axis = []
+#   for row in csv_reader:
+#     if row == header:
+#       continue
+#     s_x_axis.append(row[0])
+#     s_y2_axis.append(row[1])
 
 
 x_axis = np.array(d_x_axis)
