@@ -103,6 +103,7 @@ class JaxPolicy(BaseAgent):
 
     def sample_action(self, state: Dict[str, Any]) -> Dict[str, Any]:
         self.key, subkey = random.split(self.key)
+        print("in sample_action of JaxPolicy")
         actions = self.planner.get_action(
             subkey, self.params, self.step, state, self.eval_hyperparams)
         self.step += 1
@@ -324,8 +325,7 @@ class StochasticJaxPolicy(DeterministicJaxPolicy):
         actions = self.planner.get_action(
             subkey, self.params, self.step, state, self.eval_hyperparams)
         self.step += 1
-        print("testing noise in sample action:", self.exploration_noise)
-        # sys.exit(0)
+        print("testing noise in sample action (Stochastic class):", self.exploration_noise)
         for key in actions:
             actions[key] = actions[key] + np.random.normal(loc=0, scale=self.exploration_noise, size=actions[key].shape)
         return actions
