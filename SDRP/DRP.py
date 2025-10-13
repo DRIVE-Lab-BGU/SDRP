@@ -32,9 +32,9 @@ base_path = os.path.dirname(os.path.abspath(__file__))
 ##################
 #### for run  ####
 ##################
-instance = "instance_0.rddl"
-problem = "race_car"
-sd_for_stoc = 8
+instance = "instance_4.rddl"
+problem = "reservoir"
+sd_for_stoc = 0
 pass_for_save = f"log_{instance[0:-5]}_sd = {sd_for_stoc}_problem:{problem}.csv"
 
 
@@ -61,7 +61,7 @@ planner = JaxBackpropPlanner(rddl=myEnv.model, **planner_args)
 #
 cum = {}
 start_time = time.time()
-for epo in range(100,4000,100):
+for epo in range(100,1500,250):
     print(f'pass {time.time() - start_time } seconds')
     print("train on epochs :" , epo)
     agent=  JaxOfflineController(planner, **train_args, epochs = epo , sd=sd_for_stoc)
