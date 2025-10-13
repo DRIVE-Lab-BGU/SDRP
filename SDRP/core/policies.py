@@ -324,7 +324,7 @@ class StochasticJaxPolicy(DeterministicJaxPolicy):
         actions = self.planner.get_action(
             subkey, self.params, self.step, state, self.eval_hyperparams)
         self.step += 1
-        print(self.exploration_noise)
+        print("testing noise in sample action:", self.exploration_noise)
         sys.exit(0)
         for key in actions:
             actions[key] = actions[key] + np.random.normal(loc=0, scale=self.exploration_noise, size=actions[key].shape)
