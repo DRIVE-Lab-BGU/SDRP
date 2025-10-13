@@ -34,7 +34,7 @@ base_path = os.path.dirname(os.path.abspath(__file__))
 ##################
 instance = "instance_0.rddl"
 problem = "race_car"
-sd_for_stoc = 0
+sd_for_stoc = 3
 pass_for_save = f"log_{instance[0:-5]}_sd = {sd_for_stoc}_problem:{problem}.csv"
 
 
