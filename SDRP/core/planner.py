@@ -2061,6 +2061,36 @@ class JaxBackpropPlanner:
         self.train_policy = jax.jit(self.plan.train_policy)
         self.test_policy = jax.jit(self.plan.test_policy)
 
+        # ---- Add Gaussian exploration for continuous actions ----
+        def _exploratory_train_policy(key, params, hyperparams, step, subs):
+            actions = self.plan.train_policy(key, params, hyperparams, step, subs)
+
+            std = 1.0  # exploration σ
+            if std > 0:
+                key, subkey = random.split(key)
+                noisy_actions = jax.tree_util.tree_map(
+                    lambda a: a + std * random.normal(subkey, shape=jnp.shape(a), dtype=self.compiled.REAL),
+                    actions
+                )
+                # Clip to action bounds if available
+                noisy_actions = {
+                    var: jnp.clip(a, *self.plan.bounds[var]) if self.plan.bounds[var][0] is not None else a
+                    for var, a in noisy_actions.items()
+                }
+                return noisy_actions
+            return actions
+        # ---------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
         # roll-outs
         train_rollouts = self.compiled.compile_rollouts(
             policy=self.plan.train_policy,
