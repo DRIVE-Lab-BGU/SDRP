@@ -3075,6 +3075,7 @@ class JaxOfflineController(BaseAgent):
         self.params = params
 
     def sample_action(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        print("inside offline controller")
         self.key, subkey = random.split(self.key)
         actions = self.planner.get_action(
             subkey, self.params, self.step, state, self.eval_hyperparams)
