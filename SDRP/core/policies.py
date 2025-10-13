@@ -103,6 +103,16 @@ class JaxPolicy(BaseAgent):
         print("in sample_action of JaxPolicy")
         actions = self.planner.get_action(
             subkey, self.params, self.step, state, self.eval_hyperparams)
+        for key in actions:
+            actions[key] = actions[key] + np.random.normal(loc=0, scale=1, size=actions[key].shape)
+        self.step += 1
+        return actions
+
+    def sample_action_eval(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        self.key, subkey = random.split(self.key)
+        print("in sample_action_eval of JaxPolicy")
+        actions = self.planner.get_action(
+            subkey, self.params, self.step, state, self.eval_hyperparams)
         self.step += 1
         return actions
 
@@ -328,7 +338,7 @@ class DeterministicJaxPolicy_dep(JaxPolicy):
                  train_on_reset: bool = False,
                  save_path: Optional[str] = None,
                  **train_kwargs) -> None:
-        super(DeterministicJaxPolicy, self).__init__(planner, key, eval_hyperparams, params, train_on_reset, save_path, **train_kwargs)
+        super(DeterministicJaxPolicy_dep, self).__init__(planner, key, eval_hyperparams, params, train_on_reset, save_path, **train_kwargs)
         # super().__init__(planner, key, eval_hyperparams, params, train_on_reset, save_path, **train_kwargs)
 
     def sample_action_eval(self, state: Dict[str, Any]) -> Dict[str, Any]:
