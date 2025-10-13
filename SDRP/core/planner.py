@@ -3084,12 +3084,12 @@ class JaxOfflineController(BaseAgent):
             actions[key] = actions[key] + np.random.normal(loc=0, scale=1, size=actions[key].shape)
         return actions
 
-    def sample_action_eval(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        self.key, subkey = random.split(self.key)
-        actions = self.planner.get_action(
-            subkey, self.params, self.step, state, self.eval_hyperparams)
-        self.step += 1
-        return actions
+    # def sample_action_eval(self, state: Dict[str, Any]) -> Dict[str, Any]:
+    #     self.key, subkey = random.split(self.key)
+    #     actions = self.planner.get_action(
+    #         subkey, self.params, self.step, state, self.eval_hyperparams)
+    #     self.step += 1
+    #     return actions
 
     def reset(self) -> None:
         self.step = 0
@@ -3150,7 +3150,9 @@ class JaxOfflineController(BaseAgent):
                     env.render()
 
                 # take a step in the environment
-                action = self.sample_action_eval(state)
+                # action = self.sample_action_eval(state)
+                print("in eval")
+                action = self.sample_action(state)
                 next_state, reward, terminated, truncated, _ = env.step(action)
                 total_reward += reward * cuml_gamma
                 cuml_gamma *= gamma
