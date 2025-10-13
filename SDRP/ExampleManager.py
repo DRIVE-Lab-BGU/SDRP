@@ -8,11 +8,12 @@ import time
 #     load_config
 # )
 
-from SDRP.core.planner import {
-    JaxBakpropPlanner,
+from SDRP.core.planner import (
+    JaxBackpropPlanner,
     load_config,
     JaxOfflineController
-}
+)
+
 # from SDRP.core.policies import (
 #     # JaxPolicy,
 #     JaxOfflineController
