@@ -30,6 +30,7 @@ class JaxPolicy(BaseAgent):
                  params: Optional[Union[str, Pytree]] = None,
                  train_on_reset: bool = False,
                  save_path: Optional[str] = None,
+                 exploration_noise: Optional[float] = 0.0,
                  **train_kwargs) -> None:
         '''Creates a new JAX offline control policy that is trained once, then
         deployed later.
@@ -56,6 +57,7 @@ class JaxPolicy(BaseAgent):
         self.train_kwargs = train_kwargs
         self.params_given = params is not None
         self.hyperparams_given = eval_hyperparams is not None
+        self.exploration_noise = exploration_noise
 
         # load the policy from file
         if not self.train_on_reset and params is not None and isinstance(params, str):
