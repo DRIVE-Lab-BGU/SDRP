@@ -3,17 +3,22 @@ import sys
 
 import pyRDDLGym
 import time
-from pyRDDLGym_jax.core.planner import (
-    JaxBackpropPlanner,
-    load_config
-)
+# from pyRDDLGym_jax.core.planner import (
+#     JaxBackpropPlanner,
+#     load_config
+# )
 
-from SDRP.core.policies import (
-    # JaxPolicy,
+from SDRP.core.planner import {
+    JaxBakpropPlanner,
+    load_config,
     JaxOfflineController
-    # DeterministicJaxPolicy,
-    # StochasticJaxPolicy
-)
+}
+# from SDRP.core.policies import (
+#     # JaxPolicy,
+#     JaxOfflineController
+#     # DeterministicJaxPolicy,
+#     # StochasticJaxPolicy
+# )
 from SDRP.core.Logger import Log
 
 

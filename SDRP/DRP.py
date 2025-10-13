@@ -3,19 +3,12 @@ import os
 import csv
 
 import pyRDDLGym
-import pyRDDLGym_jax
-import matplotlib
 
-import matplotlib.pyplot as plt
-import pandas as pd
-import numpy as np
 import time
 
-from importlib.metadata import version, PackageNotFoundError
 # from pyRDDLGym_jax.core.planner import (
 # from SDRP.Planner import
-from planner import (
-    JaxDeepReactivePolicy,
+from SDRP.core.planner import (
     JaxBackpropPlanner,
     JaxOfflineController,
     load_config
