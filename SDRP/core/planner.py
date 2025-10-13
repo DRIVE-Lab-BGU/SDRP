@@ -2081,6 +2081,7 @@ class JaxBackpropPlanner:
             return actions
         # ---------------------------------------------------------
 
+        print("wrapping actions with noise")
         # Use noisy version for training rollouts
         train_rollouts = self.compiled.compile_rollouts(
             policy=_exploratory_train_policy,
