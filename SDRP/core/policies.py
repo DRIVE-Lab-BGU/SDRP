@@ -20,9 +20,6 @@ Kwargs = Dict[str, Any]
 Pytree = Any
 
 
-
-
-
 class JaxPolicy(BaseAgent):
     '''A container class for a Jax policy trained offline.'''
 
@@ -538,6 +535,7 @@ class JaxOfflineController(BaseAgent):
 
     def sample_action_eval(self, state: Dict[str, Any]) -> Dict[str, Any]:
         self.key, subkey = random.split(self.key)
+        print("inside offline controller sample_action_eval")
         actions = self.planner.get_action(
             subkey, self.params, self.step, state, self.eval_hyperparams)
         self.step += 1
