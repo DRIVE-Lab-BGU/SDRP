@@ -9,7 +9,8 @@ from pyRDDLGym_jax.core.planner import (
 )
 
 from SDRP.core.policies import (
-    JaxPolicy
+    JaxPolicy,
+    JaxOfflineController
     # DeterministicJaxPolicy,
     # StochasticJaxPolicy
 )
@@ -49,7 +50,8 @@ class ExampleManager(object):
         # else:
             # self.agent = StochasticJaxPolicy(self.planner, **train_args, exploration_noise=self.exploration_noise,
             #                             epochs=self.cur_epoch)
-        self.agent = JaxPolicy(self.planner, **train_args, epochs=self.cur_epoch)
+        # self.agent = JaxPolicy(self.planner, **train_args, epochs=self.cur_epoch)
+        self.agent = JaxOfflineController(self.planner, **train_args, epochs=episodes)
 
         metrics = self.agent.evaluate(self.myEnv, episodes=20)
         self.rewards[self.cur_epoch] = metrics['mean']

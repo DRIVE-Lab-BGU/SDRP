@@ -7,11 +7,12 @@ mpl.use("MacOSX")  # on macOS; or "TkAgg" / "QtAgg"
 import matplotlib.pyplot as plt
 import os
 
+header = ['epoch', 'eval_reward']
 base_path = os.path.dirname(os.path.abspath(__file__))
 deterministic_csv = 'reservoir_instance3_deterministic_1000.csv'
 # deterministic_csv = 'reservoir_instance3_stochastic1_1000.csv'
 stochastic1_csv = 'reservoir_instance3_stochastic1_1000.csv'
-stochastic2_csv = 'reservoir_instance3_deterministic2_1000.csv'
+stochastic2_csv = 'reservoir_instance3_deterministic_1000.csv'
 
 #deterministic
 with open(os.path.join(base_path, 'logs', deterministic_csv), mode='r', newline='') as file:
@@ -19,6 +20,8 @@ with open(os.path.join(base_path, 'logs', deterministic_csv), mode='r', newline=
   d_x_axis = []
   d_y_axis = []
   for row in csv_reader:
+    if row == header:
+      continue
     d_x_axis.append(row[0])
     d_y_axis.append(row[1])
 
@@ -28,6 +31,8 @@ with open(os.path.join(base_path, 'logs', stochastic1_csv), mode='r', newline=''
   s_x_axis = []
   s_y1_axis = []
   for row in csv_reader:
+    if row == header:
+      continue
     s_x_axis.append(row[0])
     s_y1_axis.append(row[1])
 
@@ -36,6 +41,8 @@ with open(os.path.join(base_path, 'logs', stochastic1_csv), mode='r', newline=''
   s_x_axis = []
   s_y2_axis = []
   for row in csv_reader:
+    if row == header:
+      continue
     s_x_axis.append(row[0])
     s_y2_axis.append(row[1])
 
