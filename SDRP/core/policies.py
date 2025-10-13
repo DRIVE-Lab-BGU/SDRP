@@ -327,7 +327,8 @@ class StochasticJaxPolicy(DeterministicJaxPolicy):
         self.step += 1
         print("testing noise in sample action (Stochastic class):")
         for key in actions:
-            actions[key] = actions[key] + np.random.normal(loc=0, scale=self.exploration_noise, size=actions[key].shape)
+            # actions[key] = actions[key] + np.random.normal(loc=0, scale=self.exploration_noise, size=actions[key].shape)
+            actions[key] = actions[key] + np.random.normal(loc=0, scale=1, size=actions[key].shape)
         return actions
 
     def sample_action_eval(self, state: Dict[str, Any]) -> Dict[str, Any]:
