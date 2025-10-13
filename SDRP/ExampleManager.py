@@ -9,7 +9,7 @@ from pyRDDLGym_jax.core.planner import (
 )
 
 from SDRP.core.policies import (
-    JaxPolicy,
+    # JaxPolicy,
     JaxOfflineController
     # DeterministicJaxPolicy,
     # StochasticJaxPolicy
