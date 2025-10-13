@@ -10,8 +10,8 @@ import os
 base_path = os.path.dirname(os.path.abspath(__file__))
 deterministic_csv = 'reservoir_instance3_deterministic_1000.csv'
 # deterministic_csv = 'reservoir_instance3_stochastic1_1000.csv'
-stochastic1_csv = 'reservoir_instance3_stochastic2_1000.csv'
-stochastic2_csv = 'reservoir_instance3_deterministic6_1000.csv'
+stochastic1_csv = 'reservoir_instance3_stochastic1_1000.csv'
+stochastic2_csv = 'reservoir_instance3_deterministic2_1000.csv'
 
 #deterministic
 with open(os.path.join(base_path, 'logs', deterministic_csv), mode='r', newline='') as file:
