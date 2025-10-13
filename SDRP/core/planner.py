@@ -2081,23 +2081,21 @@ class JaxBackpropPlanner:
             return actions
         # ---------------------------------------------------------
 
-
-
-
-
-
-
-
-
-
-
-        # roll-outs
+        # Use noisy version for training rollouts
         train_rollouts = self.compiled.compile_rollouts(
-            policy=self.plan.train_policy,
+            policy=_exploratory_train_policy,
             n_steps=self.horizon,
             n_batch=self.batch_size_train,
             cache_path_info=self.preprocessor is not None
         )
+
+        # roll-outs
+        # train_rollouts = self.compiled.compile_rollouts(
+        #     policy=self.plan.train_policy,
+        #     n_steps=self.horizon,
+        #     n_batch=self.batch_size_train,
+        #     cache_path_info=self.preprocessor is not None
+        # )
         self.train_rollouts = train_rollouts
 
         test_rollouts = self.test_compiled.compile_rollouts(
