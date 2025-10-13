@@ -45,8 +45,8 @@ class ExampleManager(object):
         if self.policy_type == 'deterministic':
             self.agent = DeterministicJaxPolicy(self.planner, **train_args, epochs=self.cur_epoch)
         else:
-            self.agent = StochasticJaxPolicy(self.planner, **train_args, exploration_noise=self.exploration_noise,
-                                        epochs=self.cur_epoch)
+            # self.agent = StochasticJaxPolicy(self.planner, **train_args, exploration_noise=self.exploration_noise,
+            #                             epochs=self.cur_epoch)
             self.agent = StochasticJaxPolicy(self.planner, **train_args, epochs=self.cur_epoch)
 
         metrics = self.agent.evaluate(self.myEnv, episodes=20)
