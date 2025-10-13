@@ -7,12 +7,32 @@ mpl.use("MacOSX")  # on macOS; or "TkAgg" / "QtAgg"
 import matplotlib.pyplot as plt
 import os
 
-header = ['epoch', 'eval_reward']
+header = ['epoch', 'eval_reward', 'eval_std']
+files = ['reservoir_instance3_deterministic_1000.csv', 'reservoir_instance3_stochastic1_1000.csv', 'reservoir_instance3_stochastic3_1000.csv']
 base_path = os.path.dirname(os.path.abspath(__file__))
-deterministic_csv = 'reservoir_instance3_deterministic_1000.csv'
+# deterministic_csv = 'reservoir_instance3_deterministic_1000.csv'
 # deterministic_csv = 'reservoir_instance3_stochastic1_1000.csv'
-stochastic1_csv = 'reservoir_instance3_stochastic1_1000.csv'
-stochastic2_csv = 'reservoir_instance3_stochastic3_1000.csv'
+# stochastic1_csv = 'reservoir_instance3_stochastic1_1000.csv'
+# stochastic2_csv = 'reservoir_instance3_stochastic3_1000.csv'
+
+
+# plots = len(files)
+plots = {}
+for file in files:
+  with open(os.path.join(base_path, 'logs', file), mode='r', newline='') as f:
+    csv_reader = csv.reader(file)
+    epoch = []
+    reward = []
+    std = []
+      for row in csv_reader:
+        if row == header:
+          continue
+        epoch.append(row[0])
+        reward.append(row[1])
+        std.append(row[2])
+    plots[file] = {'epochs': epoch, 'reward': reward}
+
+
 
 #deterministic
 with open(os.path.join(base_path, 'logs', deterministic_csv), mode='r', newline='') as file:
