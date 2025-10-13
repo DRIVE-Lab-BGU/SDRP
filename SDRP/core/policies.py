@@ -110,7 +110,7 @@ class JaxPolicy(BaseAgent):
 
     def sample_action_eval(self, state: Dict[str, Any]) -> Dict[str, Any]:
         self.key, subkey = random.split(self.key)
-        print("in sample_action_eval of JaxPolicy")
+        # print("in sample_action_eval of JaxPolicy")
         actions = self.planner.get_action(
             subkey, self.params, self.step, state, self.eval_hyperparams)
         self.step += 1
