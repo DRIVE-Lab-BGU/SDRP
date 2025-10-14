@@ -2065,6 +2065,7 @@ class JaxBackpropPlanner:
         def _exploratory_train_policy(key, params, hyperparams, step, subs):
             actions = self.plan.train_policy(key, params, hyperparams, step, subs)
             print("attempting exploration noise is", hyperparams)
+
             # Get std from hyperparams without casting to Python float
             if isinstance(hyperparams, dict) and ('exploration_std' in hyperparams):
                 std = hyperparams['exploration_std']
@@ -2075,6 +2076,8 @@ class JaxBackpropPlanner:
 
             # Ensure it's a JAX scalar of the right dtype
             std = jnp.asarray(std, dtype=self.compiled.REAL)
+
+            print("= exploration noise after jnp is", std)
 
             # If std==0, just return base actions (branch is okay; it's trace-time Python)
             if (isinstance(std, (int, float)) and std == 0.0):
