@@ -2077,7 +2077,7 @@ class JaxBackpropPlanner:
             # Ensure it's a JAX scalar of the right dtype
             std = jnp.asarray(std, dtype=self.compiled.REAL)
 
-            print("= exploration noise after jnp is", std)
+            jax.debug.print("exploration_std (σ) @ step {s} = {val}", s=step, val=std)
 
             # If std==0, just return base actions (branch is okay; it's trace-time Python)
             if (isinstance(std, (int, float)) and std == 0.0):
