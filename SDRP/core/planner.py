@@ -2064,25 +2064,61 @@ class JaxBackpropPlanner:
         # ---- Add Gaussian exploration for continuous actions ----
         def _exploratory_train_policy(key, params, hyperparams, step, subs):
             actions = self.plan.train_policy(key, params, hyperparams, step, subs)
+            print("attempting exploration noise is", hyperparams)
+            # Get std from hyperparams without casting to Python float
+            if isinstance(hyperparams, dict) and ('exploration_std' in hyperparams):
+                std = hyperparams['exploration_std']
+            else:
+                std = 0.0  # default if not provided
 
-            # std = 0.0  # exploration σ
-            print("applied exploration noise is", hyperparams)
-            std = jnp.array(hyperparams.get("exploration_std", 0.0), float)
-            # std = float(hyperparams.get("exploration_std", 0.0))  # exploration σ
             print("applied exploration noise is", std)
-            if std > 0:
+
+            # Ensure it's a JAX scalar of the right dtype
+            std = jnp.asarray(std, dtype=self.compiled.REAL)
+
+            # If std==0, just return base actions (branch is okay; it's trace-time Python)
+            if (isinstance(std, (int, float)) and std == 0.0):
+                return actions
+
+            # When std is a tracer, use JAX to guard
+            def maybe_add_noise(a):
+                # split a key per leaf deterministically
+                nonlocal key
                 key, subkey = random.split(key)
-                noisy_actions = jax.tree_util.tree_map(
-                    lambda a: a + std * random.normal(subkey, shape=jnp.shape(a), dtype=self.compiled.REAL),
-                    actions
-                )
-                # Clip to action bounds if available
-                noisy_actions = {
-                    var: jnp.clip(a, *self.plan.bounds[var]) if self.plan.bounds[var][0] is not None else a
-                    for var, a in noisy_actions.items()
-                }
-                return noisy_actions
-            return actions
+                noise = random.normal(subkey, shape=jnp.shape(a), dtype=self.compiled.REAL)
+                return a + std * noise
+
+            noisy_actions = jax.tree_util.tree_map(maybe_add_noise, actions)
+
+            # Clip to bounds if known
+            clipped = {
+                var: (jnp.clip(a, *self.plan.bounds[var])
+                      if (self.plan.bounds[var][0] is not None and self.plan.bounds[var][1] is not None)
+                      else a)
+                for var, a in noisy_actions.items()
+            }
+            return clipped
+        # def _exploratory_train_policy(key, params, hyperparams, step, subs):
+        #     actions = self.plan.train_policy(key, params, hyperparams, step, subs)
+        #
+        #     # std = 0.0  # exploration σ
+        #     print("applied exploration noise is", hyperparams)
+        #     std = jnp.array(hyperparams.get("exploration_std", 0.0), float)
+        #     # std = float(hyperparams.get("exploration_std", 0.0))  # exploration σ
+        #     print("applied exploration noise is", std)
+        #     if std > 0:
+        #         key, subkey = random.split(key)
+        #         noisy_actions = jax.tree_util.tree_map(
+        #             lambda a: a + std * random.normal(subkey, shape=jnp.shape(a), dtype=self.compiled.REAL),
+        #             actions
+        #         )
+        #         # Clip to action bounds if available
+        #         noisy_actions = {
+        #             var: jnp.clip(a, *self.plan.bounds[var]) if self.plan.bounds[var][0] is not None else a
+        #             for var, a in noisy_actions.items()
+        #         }
+        #         return noisy_actions
+        #     return actions
         # ---------------------------------------------------------
 
         print("[INFO] wrapping DRP actions with exploration Gaussian noise")
