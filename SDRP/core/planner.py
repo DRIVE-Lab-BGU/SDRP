@@ -2078,6 +2078,7 @@ class JaxBackpropPlanner:
             std = jnp.asarray(std, dtype=self.compiled.REAL)
 
             jax.debug.print("exploration_std (σ) @ step {s} = {val}", s=step, val=std)
+            print("sdfsdfsdf")
 
             # If std==0, just return base actions (branch is okay; it's trace-time Python)
             if (isinstance(std, (int, float)) and std == 0.0):
