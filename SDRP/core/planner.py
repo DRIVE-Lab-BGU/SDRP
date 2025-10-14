@@ -2066,6 +2066,7 @@ class JaxBackpropPlanner:
             actions = self.plan.train_policy(key, params, hyperparams, step, subs)
 
             # std = 0.0  # exploration σ
+            print("applied exploration noise is", hyperparams)
             std = float(hyperparams.get("exploration_std", 0.0))  # exploration σ
             print("applied exploration noise is", std)
             if std > 0:
