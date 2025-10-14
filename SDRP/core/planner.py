@@ -2520,6 +2520,8 @@ class JaxBackpropPlanner:
         start_time = time.time()
         elapsed_outside_loop = 0
 
+        print(policy_hyperparams)
+
         # ======================================================================
         # INITIALIZATION OF HYPER-PARAMETERS
         # ======================================================================
