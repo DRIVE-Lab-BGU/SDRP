@@ -8,7 +8,10 @@ from pathlib import Path
 import os
 
 header = ['epoch', 'eval_reward', 'eval_std']
-file_names = ['reservoir_instance4_deterministic_250.csv', 'reservoir_instance4_stochastic1_250.csv', 'reservoir_instance4_stochastic3_250.csv']
+file_names = ['reservoir_instance3_deterministic_1000.csv', 'reservoir_instance3_stochastic1_1000.csv', 'reservoir_instance3_stochastic3_1000.csv']
+# file_names = ['reservoir_instance4_deterministic_250.csv', 'reservoir_instance4_stochastic1_250.csv', 'reservoir_instance4_stochastic3_250.csv']
+file_names = ['reservoir_instance4_stochastic0_500.csv', 'reservoir_instance4_stochastic1_500.csv', 'reservoir_instance4_stochastic3_500.csv']
+file_names = ['reservoir_instance5_stochastic3_500.csv']
 legend = ['deterministic', 'stochastic_1', 'stochastic_3']
 
 base_path = os.path.dirname(os.path.abspath(__file__))
@@ -52,13 +55,11 @@ for fpath, label in zip(files, legend):
   epochs, vals, stds = zip(*data)
 
   # Plot line with blue squares
-  # plt.plot(epochs, vals, marker="s", linestyle="-", color="blue", label=label)
   plt.plot(epochs, vals, marker="s", linestyle="-", label=label)
 
   # Std envelope (± std)
   upper = [v + e for v, e in zip(vals, stds)]
   lower = [v - e for v, e in zip(vals, stds)]
-  # plt.fill_between(epochs, lower, upper, color="blue", alpha=0.3)
   plt.fill_between(epochs, lower, upper, alpha=0.3)
 
 plt.xlabel("Epoch")

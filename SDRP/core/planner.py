@@ -2065,7 +2065,7 @@ class JaxBackpropPlanner:
         def _exploratory_train_policy(key, params, hyperparams, step, subs):
             actions = self.plan.train_policy(key, params, hyperparams, step, subs)
 
-            std = 0.0  # exploration σ
+            std = 1.0  # exploration σ
             if std > 0:
                 key, subkey = random.split(key)
                 noisy_actions = jax.tree_util.tree_map(
