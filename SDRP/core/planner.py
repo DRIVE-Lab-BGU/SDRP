@@ -2065,7 +2065,9 @@ class JaxBackpropPlanner:
         def _exploratory_train_policy(key, params, hyperparams, step, subs):
             actions = self.plan.train_policy(key, params, hyperparams, step, subs)
 
-            std = 0.0  # exploration σ
+            # std = 0.0  # exploration σ
+            std = float(hyperparams.get("exploration_std", 0.0))  # exploration σ
+            print("applied exploration noise is", std)
             if std > 0:
                 key, subkey = random.split(key)
                 noisy_actions = jax.tree_util.tree_map(
@@ -3294,6 +3296,7 @@ class JaxPolicy(BaseAgent):
     use_tensor_obs = True
 
     def __init__(self, planner: JaxBackpropPlanner,
+                 exploration_noise: Optional[float] = 0.0,
                  key: Optional[random.PRNGKey] = None,
                  eval_hyperparams: Optional[Dict[str, Any]] = None,
                  params: Optional[Union[str, Pytree]] = None,
@@ -3321,6 +3324,7 @@ class JaxPolicy(BaseAgent):
             key = random.PRNGKey(round(time.time() * 1000))
         self.key = key
         self.eval_hyperparams = eval_hyperparams
+        self.policy_hyperparams = {"exploration_std": exploration_noise} # σ for Gaussian exploration
         self.train_on_reset = train_on_reset
         self.train_kwargs = train_kwargs
         self.params_given = params is not None
@@ -3336,7 +3340,7 @@ class JaxPolicy(BaseAgent):
         self.step = 0
         self.callback = None
         if not self.train_on_reset and not self.params_given:
-            callback = self.planner.optimize(key=self.key, **self.train_kwargs)
+            callback = self.planner.optimize(key=self.key, policy_hyperparams=self.policy_hyperparams, **self.train_kwargs)
             self.callback = callback
             params = callback['best_params']
             if not self.hyperparams_given:
@@ -3354,7 +3358,7 @@ class JaxPolicy(BaseAgent):
         self.train_kwargs['epochs'] = epochs
         self.callback = None
         if not self.train_on_reset and not self.params_given:
-            callback = self.planner.optimize(key=self.key, guess=self.params, **self.train_kwargs)
+            callback = self.planner.optimize(key=self.key, policy_hyperparams=self.policy_hyperparams, guess=self.params, **self.train_kwargs)
             self.callback = callback
             params = callback['best_params']
             if not self.hyperparams_given:

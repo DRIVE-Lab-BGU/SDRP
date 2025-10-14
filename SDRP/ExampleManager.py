@@ -25,7 +25,7 @@ from SDRP.core.Logger import Log
 
 
 class ExampleManager(object):
-    def __init__(self, domain, instance, config, policy_type="deterministic", episodes=10, step=10, exploration_noise=0.0):
+    def __init__(self, domain, instance, config, episodes=10, step=10, exploration_noise=0.0):
         self.domain = domain
         self.instance = instance
         self.config = config
@@ -33,9 +33,9 @@ class ExampleManager(object):
         self.step = step
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         self.rewards = {}
-        if policy_type not in ['deterministic', 'stochastic']:
-            raise Exception("unknown planner type, planner must be either 'deterministic' or 'stochastic'")
-        self.policy_type = policy_type
+        # if policy_type not in ['deterministic', 'stochastic']:
+        #     raise Exception("unknown planner type, planner must be either 'deterministic' or 'stochastic'")
+        # self.policy_type = policy_type
         self.exploration_noise = exploration_noise
 
         domain_file = os.path.join(self.base_path, "instances", self.domain, "domain.rddl")
@@ -49,16 +49,9 @@ class ExampleManager(object):
         self.stds = {}
 
         planner_args, _, train_args = load_config(config_file)
-        self.planner = JaxBackpropPlanner(rddl=self.myEnv.model, **planner_args)
         self.cur_epoch = 2
-
-        # if self.policy_type == 'deterministic':
-            # self.agent = DeterministicJaxPolicy(self.planner, **train_args, epochs=self.cur_epoch)
-            # self.agent = JaxPolicy(self.planner, **train_args, epochs=self.cur_epoch)
-        # else:
-            # self.agent = StochasticJaxPolicy(self.planner, **train_args, exploration_noise=self.exploration_noise,
-            #                             epochs=self.cur_epoch)
-        self.agent = JaxPolicy(self.planner, **train_args, epochs=self.cur_epoch)
+        self.planner = JaxBackpropPlanner(rddl=self.myEnv.model, **planner_args)
+        self.agent = JaxPolicy(self.planner, exploration_noise=self.exploration_noise, **train_args, epochs=self.cur_epoch)
 
         metrics = self.agent.evaluate(self.myEnv, episodes=20)
         self.rewards[self.cur_epoch] = metrics['mean']
@@ -82,7 +75,6 @@ class ExampleManager(object):
         print(f'total time {time.time() - start_time} seconds')
         print(self.rewards)
 
-        # self.rewards = rewards
 
     def run_example(self):
         # domain_file = os.path.join(self.base_path, "instances", self.domain, "domain.rddl")
