@@ -2067,7 +2067,8 @@ class JaxBackpropPlanner:
 
             # std = 0.0  # exploration σ
             print("applied exploration noise is", hyperparams)
-            std = float(hyperparams.get("exploration_std", 0.0))  # exploration σ
+            std = jnp.array(hyperparams.get("exploration_std", 0.0), float)
+            # std = float(hyperparams.get("exploration_std", 0.0))  # exploration σ
             print("applied exploration noise is", std)
             if std > 0:
                 key, subkey = random.split(key)
@@ -2519,8 +2520,6 @@ class JaxBackpropPlanner:
         '''
         start_time = time.time()
         elapsed_outside_loop = 0
-
-        print(policy_hyperparams)
 
         # ======================================================================
         # INITIALIZATION OF HYPER-PARAMETERS
