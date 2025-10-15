@@ -12,8 +12,10 @@ header = ['epoch', 'eval_reward', 'eval_std']
 # file_names = ['reservoir_instance4_deterministic_250.csv', 'reservoir_instance4_stochastic1_250.csv', 'reservoir_instance4_stochastic3_250.csv']
 # file_names = ['reservoir_instance4_stochastic0_500.csv', 'reservoir_instance4_stochastic1_500.csv', 'reservoir_instance4_stochastic3_500.csv']
 # file_names = ['reservoir_instance5_stochastic0_500.csv', 'reservoir_instance5_stochastic1_500.csv', 'reservoir_instance5_stochastic3_500.csv']
-file_names = ['cartpole_instance1_stochastic0_200.csv','cartpole_instance1_stochastic1_200.csv']
-legend = ['deterministic', 'stochastic_1', 'stochastic_3']
+# file_names = ['cartpole_instance1_stochastic0_200.csv','cartpole_instance1_stochastic1_200.csv']
+file_names = ['reservoir_instance3_noise0_1000.csv', 'reservoir_instance3_noise3_1000.csv']
+file_names = ['HVAC_instance5_noise0_100.csv', 'HVAC_instance5_noise3_100.csv']
+legend = ['deterministic', 'stochastic_3']
 
 base_path = os.path.dirname(os.path.abspath(__file__))
 
@@ -65,79 +67,10 @@ for fpath, label in zip(files, legend):
 
 plt.xlabel("Epoch")
 plt.ylabel("Eval reward")
-# plt.title(title)
-plt.legend()
+plt.title('Reservoir domain, instance 3')
+plt.legend(legend)
 plt.grid(True, linestyle="--", alpha=0.6)
 plt.tight_layout()
 plt.show()
 
 
-
-
-
-
-# # plots = len(files)
-# plots = {}
-# for file in files:
-#   with open(os.path.join(base_path, 'logs', file), mode='r', newline='') as f:
-#     csv_reader = csv.reader(file)
-#     epoch = []
-#     reward = []
-#     std = []
-#     for row in csv_reader:
-#       if row == header:
-#         continue
-#       epoch.append(row[0])
-#       reward.append(row[1])
-#   plots[file] = { 'epochs': epoch, 'reward': reward, 'std': std }
-#
-# sys.exit()
-
-
-#deterministic
-# with open(os.path.join(base_path, 'logs', deterministic_csv), mode='r', newline='') as file:
-#   csv_reader = csv.reader(file)
-#   d_x_axis = []
-#   d_y_axis = []
-#   for row in csv_reader:
-#     if row == header:
-#       continue
-#     d_x_axis.append(row[0])
-#     d_y_axis.append(row[1])
-#
-# #stochastic
-# with open(os.path.join(base_path, 'logs', stochastic1_csv), mode='r', newline='') as file:
-#   csv_reader = csv.reader(file)
-#   s_x_axis = []
-#   s_y1_axis = []
-#   for row in csv_reader:
-#     if row == header:
-#       continue
-#     s_x_axis.append(row[0])
-#     s_y1_axis.append(row[1])
-#
-# with open(os.path.join(base_path, 'logs', stochastic2_csv), mode='r', newline='') as file:
-#   csv_reader = csv.reader(file)
-#   s_x_axis = []
-#   s_y2_axis = []
-#   for row in csv_reader:
-#     if row == header:
-#       continue
-#     s_x_axis.append(row[0])
-#     s_y2_axis.append(row[1])
-
-
-# x_axis = np.array(d_x_axis)
-# d_y_axis = np.array(d_y_axis, dtype=float)
-# s_y1_axis = np.array(s_y1_axis, dtype=float)
-# s_y2_axis = np.array(s_y2_axis, dtype=float)
-# plt.figure(figsize=(10, 6)) # Adjust figure size as needed
-# plt.plot(x_axis, d_y_axis, marker='o', linestyle='-') # Line plot with markers
-# plt.plot(x_axis, s_y1_axis, marker='x', linestyle='-') # Line plot with markers
-# plt.plot(x_axis, s_y2_axis, marker='v', linestyle='-') # Line plot with markers
-# plt.xlabel('X-axis Label')
-# plt.ylabel('Y-axis Label')
-# plt.title('Plot Title')
-# plt.legend(['Deterministic', 'Stochastic_1', 'Stochastic_3'])
-# plt.grid(True) # Add a grid for better readability
-# plt.show()

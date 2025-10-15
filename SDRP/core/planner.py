@@ -3360,7 +3360,7 @@ class JaxPolicy(BaseAgent):
             key = random.PRNGKey(round(time.time() * 1000))
         self.key = key
         self.eval_hyperparams = eval_hyperparams
-        self.policy_hyperparams = {"exploration_std": exploration_noise} # σ for Gaussian exploration
+        self.policy_hyperparams = {"exploration_std": exploration_noise, 'set-acc': 10}  # σ for Gaussian exploration
         self.train_on_reset = train_on_reset
         self.train_kwargs = train_kwargs
         self.params_given = params is not None
