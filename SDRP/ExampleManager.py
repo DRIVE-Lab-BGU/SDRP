@@ -33,9 +33,6 @@ class ExampleManager(object):
         self.step = step
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         self.rewards = {}
-        # if policy_type not in ['deterministic', 'stochastic']:
-        #     raise Exception("unknown planner type, planner must be either 'deterministic' or 'stochastic'")
-        # self.policy_type = policy_type
         self.exploration_noise = exploration_noise
 
         domain_file = os.path.join(self.base_path, "instances", self.domain, "domain.rddl")
