@@ -11,14 +11,17 @@ header = ['epoch', 'eval_reward', 'eval_std']
 # file_names = ['reservoir_instance3_deterministic_1000.csv', 'reservoir_instance3_stochastic1_1000.csv', 'reservoir_instance3_stochastic3_1000.csv']
 # file_names = ['reservoir_instance4_deterministic_250.csv', 'reservoir_instance4_stochastic1_250.csv', 'reservoir_instance4_stochastic3_250.csv']
 # file_names = ['reservoir_instance4_stochastic0_500.csv', 'reservoir_instance4_stochastic1_500.csv', 'reservoir_instance4_stochastic3_500.csv']
-file_names = ['reservoir_instance5_stochastic0_500.csv', 'reservoir_instance5_stochastic1_500.csv', 'reservoir_instance5_stochastic3_500.csv']
+# file_names = ['reservoir_instance5_stochastic0_500.csv', 'reservoir_instance5_stochastic1_500.csv', 'reservoir_instance5_stochastic3_500.csv']
 # file_names = ['cartpole_instance1_stochastic0_200.csv','cartpole_instance1_stochastic1_200.csv']
-# file_names = ['reservoir_instance3_noise0_1000.csv', 'reservoir_instance3_noise3_1000.csv']
 # file_names = ['reservoir_instance4_stochastic0_500.csv', 'reservoir_instance3_noise3_1000.csv']
 # file_names = ['HVAC_instance5_noise0_100.csv', 'HVAC_instance5_noise3_100.csv']
 # file_names = ['UAV_instance2_noise0_100.csv', 'UAV_instance2_noise3_100.csv']
-# legend = ['deterministic', 'stochastic_3']
-legend = []
+
+file_names = ['HVAC_instance1_noise0.csv', 'HVAC_instance1_noise1.csv']#, 'HVAC_instance1_noise3.csv']
+# file_names = ['reservoir_instance3_noise0_1000.csv', 'reservoir_instance3_noise3_1000.csv']
+legend = ['w/o exploration noise', 'w exploration noise']
+title = "Multi-zone HVA Control Problem"
+# legend = []
 base_path = os.path.dirname(os.path.abspath(__file__))
 
 files = []
@@ -33,7 +36,8 @@ if not files:
 if legend is None or len(legend) != len(files):
   legend = [Path(f).stem for f in files]  # fallback to filename stems
 
-plt.figure(figsize=(9, 5))
+fig, ax = plt.subplots(figsize=(9, 5))
+line_handles = []
 
 for fpath, label in zip(files, legend):
   epochs, vals, stds = [], [], []
@@ -60,19 +64,22 @@ for fpath, label in zip(files, legend):
   epochs, vals, stds = zip(*data)
 
   # Plot line with blue squares
-  plt.plot(epochs, vals, marker="s", linestyle="-", label=label)
+  line, = ax.plot(epochs, vals, marker="s", linestyle="-")
+  line_handles.append(line)
 
   # Std envelope (± std)
   upper = [v + e for v, e in zip(vals, stds)]
   lower = [v - e for v, e in zip(vals, stds)]
-  plt.fill_between(epochs, lower, upper, alpha=0.3)
+  ax.fill_between(epochs, lower, upper, alpha=0.3, label="_nolegend_")
 
-plt.xlabel("Epoch")
-plt.ylabel("Eval reward")
-plt.title('Reservoir domain, instance 3')
-plt.legend(legend)
-plt.grid(True, linestyle="--", alpha=0.6)
-plt.tight_layout()
+ax.set_xlabel("Episode", fontsize=16)
+ax.set_ylabel("Eval reward", fontsize=16)
+# ax.set_title(title)
+ax.grid(True, linestyle="--", alpha=0.6)
+fig.tight_layout()
+
+# ✅ Build legend from the line handles only
+ax.legend(line_handles, legend, handlelength=2.5, frameon=True, fontsize=12)
+
 plt.show()
-
 

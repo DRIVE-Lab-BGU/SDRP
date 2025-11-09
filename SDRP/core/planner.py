@@ -2605,6 +2605,8 @@ class JaxBackpropPlanner:
                             f'which could be suboptimal.', 'yellow')
                         print(message)
                     policy_hyperparams[action] = 1.0
+                else:
+                    policy_hyperparams[action] = self.rddl.action_fluents[action]
                     # TODO: make automatic according to the RDDL: {action: hyperparam_value
                     #                                   for action in self.rddl.action_fluents}
 
