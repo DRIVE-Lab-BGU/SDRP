@@ -24,7 +24,7 @@ from planner import (
 
 ##
 ###############################################
-#     Create the environment with config      #
+#     Create the enviroxnment with config      #
 ###############################################
 
 base_path = os.path.dirname(os.path.abspath(__file__))
@@ -317,3 +317,4 @@ plt.show()
 # plt.grid(True)
 # plt.savefig(f"{basename}_reward_histogram_DRP.png")
 # plt.close()
+##rfowjdsfi
