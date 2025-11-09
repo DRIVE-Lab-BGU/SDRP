@@ -4,19 +4,12 @@ import os
 import csv
 
 import pyRDDLGym
-import pyRDDLGym_jax
-import matplotlib
 
-import matplotlib.pyplot as plt
-import pandas as pd
-import numpy as np
 import time
 
-from importlib.metadata import version, PackageNotFoundError
 # from pyRDDLGym_jax.core.planner import (
 # from SDRP.Planner import
-from planner import (
-    JaxDeepReactivePolicy,
+from SDRP.core.planner import (
     JaxBackpropPlanner,
     JaxOfflineController,
     load_config
@@ -76,11 +69,10 @@ print(cum)
 basename = instance
 
 
-csv_file = os.path.join(base_path, pass_for_save)
 write_header = not os.path.exists(csv_file)
 
 # Open the file in append mode
-mode='w'
+mode = 'w'
 csvfile = open(csv_file, mode=mode, newline='')
 writer = csv.DictWriter(csvfile, fieldnames=["epoch", "eval_reward" ,"eval_sd"])
 writer.writeheader()

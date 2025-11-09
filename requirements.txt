@@ -1,0 +1,5 @@
+pyrddlgym
+rddlrepository
+pyrddlgym-jax==2.6
+numpy==2.1
+dash
