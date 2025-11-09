@@ -1,3 +1,4 @@
+####
 import sys
 import os
 import csv
@@ -20,8 +21,18 @@ from SDRP.core.planner import (
 ###############################################
 
 base_path = os.path.dirname(os.path.abspath(__file__))
-instance = "instance_2.rddl"
+
+##################
+#### for run  ####
+##################
+instance = "instance_4.rddl"
 problem = "reservoir"
+sd_for_stoc = 0
+pass_for_save = f"log_{instance[0:-5]}_sd = {sd_for_stoc}_problem:{problem}.csv"
+
+
+###################################
+
 domain_file = os.path.join(base_path, "instances", problem, "domain.rddl")
 instance_file = os.path.join(base_path, "instances", problem, instance)
 myEnv = pyRDDLGym.make(domain=domain_file,
@@ -30,9 +41,11 @@ myEnv = pyRDDLGym.make(domain=domain_file,
 
 
 # Create the planner for differentiable planning
+
 config_file = os.path.join(base_path, "configs", "Reservoir_DRP.cfg")
 planner_args, _, train_args = load_config(config_file)
 planner = JaxBackpropPlanner(rddl=myEnv.model, **planner_args)
+
 # The agent wraps the planner and executes training/evaluation
 #agent   = JaxOfflineController(planner, **train_args)
 #metrics = agent.evaluate(myEnv, episodes=10)
@@ -41,41 +54,40 @@ planner = JaxBackpropPlanner(rddl=myEnv.model, **planner_args)
 #
 cum = {}
 start_time = time.time()
-for epo in range(100,3500,250):
+for epo in range(100,1500,250):
     print(f'pass {time.time() - start_time } seconds')
     print("train on epochs :" , epo)
-    agent=  JaxOfflineController(planner, **train_args, epochs = epo )
+    agent=  JaxOfflineController(planner, **train_args, epochs = epo , sd=sd_for_stoc)
     # episodes – number of evaluation episodes:
     # For each episode, reset the env (env.reset), roll out the policy until the horizon or done=True
     ## importent!!!!  i change the file policy for evaluate (matrics line 92 sample_action_eval(state) )
     metrics = agent.evaluate(myEnv, episodes=20)
-    cum[epo] = metrics['mean']
+    cum[epo] = metrics['mean'] , metrics['std']
 print(f'total time {time.time() - start_time} seconds')
 print(cum)
+
 basename = instance
 
 
-
-csv_file = os.path.join(base_path, 'logs', f"log_{instance[0:-5]}_sd = 1.csv")
 write_header = not os.path.exists(csv_file)
 
 # Open the file in append mode
 mode = 'w'
 csvfile = open(csv_file, mode=mode, newline='')
-writer = csv.DictWriter(csvfile, fieldnames=["epoch", "eval_reward"])
+writer = csv.DictWriter(csvfile, fieldnames=["epoch", "eval_reward" ,"eval_sd"])
 writer.writeheader()
 
 # for r in range(len(cum)):
 for _, (key, value) in enumerate(cum.items(), start=0):
     row = {
         'epoch': key,
-        'eval_reward': value
+        'eval_reward': value[0] ,
+        'eval_sd': value[1],
     }
     writer.writerow(row)
 csvfile.close()
 
-
-
+print("end run")
 
 
 #
