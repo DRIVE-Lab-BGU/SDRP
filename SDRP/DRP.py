@@ -4,13 +4,22 @@ import os
 import csv
 
 import pyRDDLGym
-import pyRDDLGym_jax
+#import pyRDDLGym_jax
 import matplotlib
 
+from pyRDDLGym_jax.core import (simulator,
+                            model,
+                                tuning,
+                                logic,
+                                compiler,
+                                planner)
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 import time
+
+
+
 
 from importlib.metadata import version, PackageNotFoundError
 # from pyRDDLGym_jax.core.planner import (
