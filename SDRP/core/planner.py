@@ -2491,8 +2491,12 @@ class JaxBackpropPlanner:
             # Roll out with the (possibly noisy) behavior policy
             log, model_params = rollouts(key, policy_params, policy_hyperparams, subs, model_params)
             log = _ensure_action_dict_in_log(log)
-            # jax.debug.print("Log keys: {keys}", keys=list(log.keys()))
-            jax.debug.print("log keys: {k}", k=tuple(log.keys()))
+
+            _has_action = jnp.array(1 if ('action' in log) else 0)
+            _has_release = jnp.array(1 if ('release' in log) else 0)
+            _n_keys = jnp.array(len(log.keys()))
+            jax.debug.print("log has 'action'? {h} | log has 'release'? {r} | n_keys={n}", h=_has_action, r=_has_release, n=_n_keys)
+
             actions = log['action']
             fluents = log['fluents']
             rewards = log['reward']  # [B, T]
