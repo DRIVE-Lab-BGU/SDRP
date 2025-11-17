@@ -2492,12 +2492,7 @@ class JaxBackpropPlanner:
             log, model_params = rollouts(key, policy_params, policy_hyperparams, subs, model_params)
             log = _ensure_action_dict_in_log(log)
             # jax.debug.print("Log keys: {keys}", keys=list(log.keys()))
-            jax.lax.cond(
-                jnp.array_equal(key, random.PRNGKey(0)),  # crude example condition
-                lambda _: jax.debug.print("log snapshot: {keys}", keys=list(log.keys())),
-                lambda _: None,
-                operand=None
-            )
+            jax.debug.print("log keys: {k}", k=tuple(log.keys()))
             actions = log['action']
             fluents = log['fluents']
             rewards = log['reward']  # [B, T]
