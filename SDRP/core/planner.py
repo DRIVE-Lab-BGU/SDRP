@@ -2194,7 +2194,7 @@ class JaxBackpropPlanner:
 
         return _jax_wrapped_returns
 
-    def _jax_loss(self, rollouts, use_symlog=False):
+    def _jax_loss_IS(self, rollouts, use_symlog=False):
         utility_fn = self.utility
         utility_kwargs = self.utility_kwargs
         _jax_wrapped_returns = self._jax_return(use_symlog)
@@ -2253,7 +2253,6 @@ class JaxBackpropPlanner:
 
         def _jax_wrapped_plan_loss(key, policy_params, policy_hyperparams, subs, model_params):
             log, model_params = rollouts(key, policy_params, policy_hyperparams, subs, model_params)
-            jax.debug.print("log keys: {k}", k=tuple(log.keys()))
             rewards = log['reward']  # [B, T]
             B, T = rewards.shape
 
@@ -2317,7 +2316,7 @@ class JaxBackpropPlanner:
 
         return _jax_wrapped_plan_loss
 
-    def _jax_loss_unclipped(self, rollouts, use_symlog=False):
+    def _jax_loss(self, rollouts, use_symlog=False):
         utility_fn = self.utility
         utility_kwargs = self.utility_kwargs
         _jax_wrapped_returns = self._jax_return(use_symlog)
