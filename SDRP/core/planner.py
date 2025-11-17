@@ -2491,6 +2491,8 @@ class JaxBackpropPlanner:
             # Roll out with the (possibly noisy) behavior policy
             log, model_params = rollouts(key, policy_params, policy_hyperparams, subs, model_params)
             log = _ensure_action_dict_in_log(log)
+            actions = log['action']
+            fluents = log['fluents']
             rewards = log['reward']  # [B, T]
             B, T = rewards.shape
 
