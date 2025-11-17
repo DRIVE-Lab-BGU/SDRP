@@ -3623,7 +3623,6 @@ class JaxPolicy(BaseAgent):
             "exploration_std": exploration_noise, # behavior σ_b for Gaussian exploration
             "target_std": exploration_noise,  # target σ_t (can equal σ_b if you want)
             'set-acc': 10,
-            'release': 10,
         }
         self.train_on_reset = train_on_reset
         self.train_kwargs = train_kwargs
