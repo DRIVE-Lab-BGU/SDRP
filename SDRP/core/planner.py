@@ -75,8 +75,10 @@ from pyRDDLGym.core.policy import BaseAgent
 
 from pyRDDLGym_jax import __version__
 from pyRDDLGym_jax.core import logic
-from pyRDDLGym_jax.core.compiler import JaxRDDLCompiler
+# from pyRDDLGym_jax.core.compiler import JaxRDDLCompiler
 from pyRDDLGym_jax.core.logic import Logic, FuzzyLogic
+
+from SDRP.core.compiler import JaxRDDLCompiler
 
 # try to load the dash board
 try:
@@ -2492,14 +2494,6 @@ class JaxBackpropPlanner:
             log, model_params = rollouts(key, policy_params, policy_hyperparams, subs, model_params)
             log = _ensure_action_dict_in_log(log)
 
-            _has_action = jnp.array(1 if ('action' in log) else 0)
-            _has_release = jnp.array(1 if ('release' in log) else 0)
-            _n_keys = jnp.array(len(log.keys()))
-            jax.debug.print("log has 'action'? {h} | log has 'release'? {r} | n_keys={n}", h=_has_action, r=_has_release, n=_n_keys)
-
-            releases = log['release']
-            actions = log['action']
-            fluents = log['fluents']
             rewards = log['reward']  # [B, T]
             B, T = rewards.shape
 
