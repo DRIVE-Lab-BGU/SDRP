@@ -33,6 +33,7 @@ class RDDLTorchSimulator(RDDLSimulator):
         :param python_functions: external user-defined functions
         :param device: torch device for returned tensors (defaults to CPU)
         :param tensor_dtype: default dtype for floating point tensors
+        :param action_noise_std: std-dev ofr zero-mean Gaussian noise added to actions
         '''
         # Initialize the underlying numpy-based simulator first.
         super(RDDLTorchSimulator, self).__init__(
@@ -49,7 +50,7 @@ class RDDLTorchSimulator(RDDLSimulator):
             device = torch.device(device)
         self.device = device
         self.tensor_dtype = tensor_dtype
-
+        self.action_noies_std = max(0.0 , float(action_noise_std))
         # Torch RNG mirrors numpy RNG to give deterministic behavior when seeding.
         generator_device = (
             'cuda' if self.device.type == 'cuda' and torch.cuda.is_available()
@@ -89,7 +90,9 @@ class RDDLTorchSimulator(RDDLSimulator):
 
     def step(self, actions: Args):
         '''Perform a simulator step accepting torch actions and returning torch state.'''
+        
         numpy_actions = {k: self._ensure_numpy(v) for (k, v) in actions.items()}
+        numpy_actions = self._apply_action_noise(numpy_actions)
         obs, reward, done = super(RDDLTorchSimulator, self).step(numpy_actions)
         return (
             self._tensorize_structure(obs),
@@ -166,64 +169,29 @@ class RDDLTorchSimulator(RDDLSimulator):
         if isinstance(value, (np.integer, int)):
             return torch.tensor(int(value), dtype=torch.long, device=self.device)
         return torch.tensor(float(value), dtype=self.tensor_dtype, device=self.device)
-    def step(self, actions: Args) -> Args:
-        '''Samples and returns the next state from the CPF expressions.
-        
-        :param actions: a dict mapping current action fluent to their values
-        '''
-        rddl = self.rddl
-        keep_tensors = self.keep_tensors
-        subs = self.subs
-        subs.update(actions)
-        
-        # evaluate CPFs in topological order
-        for (cpf, expr, dtype) in self.cpfs:
-            sample = self._sample(expr, subs)
-            RDDLSimulator._check_type(sample, dtype, cpf, expr)
-            subs[cpf] = sample
-        
-        # evaluate reward
-        reward = self.sample_reward()
-        
-        # update state
-        self.state = {}
-        for (state, next_state) in rddl.next_state.items():
-
-            # set state = state' for the next epoch
-            subs[state] = subs[next_state]
-
-            # convert object integer to string representation
-            state_values = subs[state]
-            if self.objects_as_strings:
-                ptype = rddl.variable_ranges[state]
-                if ptype not in RDDLValueInitializer.NUMPY_TYPES:
-                    state_values = rddl.index_to_object_string_array(ptype, state_values)
-
-            # optional grounding of state dictionary
-            if keep_tensors:
-                self.state[state] = state_values
-            else:
-                self.state.update(rddl.ground_var_with_values(state, state_values))
-        
-        # update observation
-        if self._pomdp: 
-            obs = {}
-            for var in rddl.observ_fluents:
-
-                # convert object integer to string representation
-                obs_values = subs[var]
-                if self.objects_as_strings:
-                    ptype = rddl.variable_ranges[var]
-                    if ptype not in RDDLValueInitializer.NUMPY_TYPES:
-                        obs_values = rddl.index_to_object_string_array(ptype, obs_values)
-
-                # optional grounding of observ-fluent dictionary    
-                if keep_tensors:
-                    obs[var] = obs_values
-                else:
-                    obs.update(rddl.ground_var_with_values(var, obs_values))
-        else:
-            obs = self.state
-        
-        done = self.check_terminal_states()        
-        return obs, reward, done
+    
+    
+    def _apply_action_noise(self, actions: Args) -> Args:
+        '''Inject zero-mean Gaussian noise onto floating point leaves.'''
+        if self.action_noise_std <= 0:
+            return actions
+        return self._add_noise_to_value(actions)
+    
+    
+    def _add_noise_to_value(self , value:Any):
+        if isinstance(value , dict):
+            return{k:self._add_noise_to_valuse(v) for (v,k)in value.items()}
+        if isinstance(value, list):
+            return [self._add_noise_to_value(v) for v in value]
+        if isinstance(value, tuple):
+            return tuple(self._add_noise_to_value(v) for v in value)
+        if isinstance(value, np.ndarray):
+            if np.issubdtype(value.dtype, np.floating):
+                noise = np.random.normal(
+                    loc=0.0, scale=self.action_noise_std, size=value.shape)
+                return value + noise
+            return value
+        if isinstance(value, (np.floating, float)):
+            return float(value) + np.random.normal(
+                loc=0.0, scale=self.action_noise_std)
+        return value
