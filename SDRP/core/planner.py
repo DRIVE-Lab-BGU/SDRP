@@ -3102,7 +3102,7 @@ class JaxBackpropPlanner:
         # progress bar
         if print_progress:
             progress_bar = tqdm(None, total=100, position=tqdm_position,
-                                bar_format='{l_bar}{bar}| {elapsed} {postfix}')
+                                bar_format='{l_bar}{bar}| {elapsed} {postfix}',disable=True)
         else:
             progress_bar = None
         position_str = '' if tqdm_position is None else f'[{tqdm_position}]'
