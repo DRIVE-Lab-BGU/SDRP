@@ -3,7 +3,7 @@ from typing import Callable, Dict, Optional, Union, Any
 
 import numpy as np
 import torch
-
+from pyRDDLGym.core.compiler.initializer import RDDLValueInitializer
 from pyRDDLGym.core.compiler.model import RDDLPlanningModel
 from pyRDDLGym.core.debug.logger import Logger
 from pyRDDLGym.core.parser.expr import Value
@@ -22,7 +22,8 @@ class RDDLTorchSimulator(RDDLSimulator):
                  objects_as_strings: bool=True,
                  python_functions: Optional[Dict[str, Callable]]=None,
                  device: Optional[Union[str, torch.device]]=None,
-                 tensor_dtype: torch.dtype=torch.float32) -> None:
+                 tensor_dtype: torch.dtype=torch.float32,
+                 action_noise_std: float=0.0) -> None:
         '''Creates a simulator that returns torch tensors and accepts torch actions.
 
         :param rddl: compiled RDDL planning model
@@ -165,3 +166,64 @@ class RDDLTorchSimulator(RDDLSimulator):
         if isinstance(value, (np.integer, int)):
             return torch.tensor(int(value), dtype=torch.long, device=self.device)
         return torch.tensor(float(value), dtype=self.tensor_dtype, device=self.device)
+    def step(self, actions: Args) -> Args:
+        '''Samples and returns the next state from the CPF expressions.
+        
+        :param actions: a dict mapping current action fluent to their values
+        '''
+        rddl = self.rddl
+        keep_tensors = self.keep_tensors
+        subs = self.subs
+        subs.update(actions)
+        
+        # evaluate CPFs in topological order
+        for (cpf, expr, dtype) in self.cpfs:
+            sample = self._sample(expr, subs)
+            RDDLSimulator._check_type(sample, dtype, cpf, expr)
+            subs[cpf] = sample
+        
+        # evaluate reward
+        reward = self.sample_reward()
+        
+        # update state
+        self.state = {}
+        for (state, next_state) in rddl.next_state.items():
+
+            # set state = state' for the next epoch
+            subs[state] = subs[next_state]
+
+            # convert object integer to string representation
+            state_values = subs[state]
+            if self.objects_as_strings:
+                ptype = rddl.variable_ranges[state]
+                if ptype not in RDDLValueInitializer.NUMPY_TYPES:
+                    state_values = rddl.index_to_object_string_array(ptype, state_values)
+
+            # optional grounding of state dictionary
+            if keep_tensors:
+                self.state[state] = state_values
+            else:
+                self.state.update(rddl.ground_var_with_values(state, state_values))
+        
+        # update observation
+        if self._pomdp: 
+            obs = {}
+            for var in rddl.observ_fluents:
+
+                # convert object integer to string representation
+                obs_values = subs[var]
+                if self.objects_as_strings:
+                    ptype = rddl.variable_ranges[var]
+                    if ptype not in RDDLValueInitializer.NUMPY_TYPES:
+                        obs_values = rddl.index_to_object_string_array(ptype, obs_values)
+
+                # optional grounding of observ-fluent dictionary    
+                if keep_tensors:
+                    obs[var] = obs_values
+                else:
+                    obs.update(rddl.ground_var_with_values(var, obs_values))
+        else:
+            obs = self.state
+        
+        done = self.check_terminal_states()        
+        return obs, reward, done
