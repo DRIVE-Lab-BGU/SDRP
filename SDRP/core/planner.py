@@ -75,7 +75,6 @@ from pyRDDLGym.core.policy import BaseAgent
 
 from pyRDDLGym_jax import __version__
 from pyRDDLGym_jax.core import logic
-# from pyRDDLGym_jax.core.compiler import JaxRDDLCompiler
 from pyRDDLGym_jax.core.logic import Logic, FuzzyLogic
 
 from .compiler import JaxRDDLCompiler
@@ -2132,7 +2131,9 @@ class JaxBackpropPlanner:
             policy=_exploratory_train_policy,
             n_steps=self.horizon,
             n_batch=self.batch_size_train,
-            cache_path_info=self.preprocessor is not None
+            cache_path_info=self.preprocessor is not None,
+            log_actions=True,  # <-- THIS enables log['action']
+            log_fluents=True  # <-- optional but useful for IS
         )
 
         # roll-outs

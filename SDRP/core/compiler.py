@@ -238,45 +238,19 @@ class JaxRDDLCompiler:
     def compile_transition(self, check_constraints: bool = False,
                            constraint_func: bool = False,
                            init_params_constr: Dict[str, Any] = {},
-                           cache_path_info: bool = False) -> Callable:
-        '''Compiles the current RDDL model into a JAX transition function that
-        samples the next state.
-
-        The arguments of the returned function is:
-            - key is the PRNG key
-            - actions is the dict of action tensors
-            - subs is the dict of current pvar value tensors
-            - model_params is a dict of parameters for the relaxed model.
-
-        The returned value of the function is:
-            - subs is the returned next epoch fluent values
-            - log includes all the auxiliary information about constraints
-              satisfied, errors, etc.
-
-        constraint_func provides the option to compile nonlinear constraints:
-
-            1. f(s, a) ?? g(s, a)
-            2. f1(s, a) ^ f2(s, a) ^ ... ?? g(s, a)
-            3. forall_{?p1, ...} f(s, a, ?p1, ...) ?? g(s, a) where f is of the
-               form 1 or 2 above.
-
-        and where ?? is <, <=, > or >= into JAX expressions h(s, a) representing
-        the constraints of the form:
-
-            h(s, a) <= 0
-            g(s, a) == 0
-
-        for which a penalty or barrier-type method can be used to enforce
-        constraint satisfaction. A list is returned containing values for all
-        non-box inequality constraints.
-
-        :param check_constraints: whether state, action and termination
-        conditions should be checked on each time step: this info is stored in the
-        returned log and does not raise an exception
-        :param constraint_func: produces the h(s, a) function described above
-        in addition to the usual outputs
-        :param cache_path_info: whether to save full path traces as part of the log
+                           cache_path_info: bool = False,
+                           log_actions: bool = False,
+                           log_fluents: bool = False) -> Callable:
+        '''Compiles a single-step transition. See original docstring.
+           Adds:
+             - log_actions: include per-step action dict in log['action']
+             - log_fluents: include per-step fluents dict in log['fluents']
+           Note: cache_path_info=True is treated as log_fluents=True for compatibility.
         '''
+        # Back-compat: keep cache_path_info behavior
+        if cache_path_info:
+            log_fluents = True
+
         NORMAL = JaxRDDLCompiler.ERROR_CODES['NORMAL']
         rddl = self.rddl
         reward_fn, cpfs, preconds, invariants, terminals = \
@@ -284,14 +258,17 @@ class JaxRDDLCompiler:
 
         # compile constraint information
         if constraint_func:
-            inequality_fns, equality_fns = self._jax_nonlinear_constraints(
-                init_params_constr)
+            inequality_fns, equality_fns = self._jax_nonlinear_constraints(init_params_constr)
         else:
             inequality_fns, equality_fns = None, None
 
-        # do a single step update from the RDDL model
         def _jax_wrapped_single_step(key, actions, subs, model_params):
             errors = NORMAL
+
+            # (Optional) keep a copy of actions for logging before subs is mutated
+            actions_to_log = actions if log_actions else None
+
+            # actions become part of subs for CPF evaluation
             subs.update(actions)
 
             # check action preconditions
@@ -302,7 +279,7 @@ class JaxRDDLCompiler:
                     precond_check = jnp.logical_and(precond_check, sample)
                     errors |= err
 
-            # compute h(s, a) <= 0 and g(s, a) == 0 constraint functions
+            # constraint functions h(s,a) <= 0 / g(s,a) == 0 (optional)
             inequalities, equalities = [], []
             if constraint_func:
                 for constraint in inequality_fns:
@@ -319,12 +296,12 @@ class JaxRDDLCompiler:
                 subs[name], key, err, model_params = cpf(subs, model_params, key)
                 errors |= err
 
-                # calculate the immediate reward
+            # immediate reward
             reward, key, err, model_params = reward_fn(subs, model_params, key)
             errors |= err
 
-            # calculate fluent values
-            if cache_path_info:
+            # (Optional) collect fluents snapshot for logging
+            if log_fluents:
                 fluents = {name: values for (name, values) in subs.items()
                            if name not in rddl.non_fluents}
             else:
@@ -334,7 +311,7 @@ class JaxRDDLCompiler:
             for (state, next_state) in rddl.next_state.items():
                 subs[state] = subs[next_state]
 
-            # check the state invariants
+            # state invariants
             invariant_check = True
             if check_constraints:
                 for invariant in invariants:
@@ -342,7 +319,7 @@ class JaxRDDLCompiler:
                     invariant_check = jnp.logical_and(invariant_check, sample)
                     errors |= err
 
-            # check the termination (TODO: zero out reward in s if terminated)
+            # termination predicates
             terminated_check = False
             if check_constraints:
                 for terminal in terminals:
@@ -350,15 +327,20 @@ class JaxRDDLCompiler:
                     terminated_check = jnp.logical_or(terminated_check, sample)
                     errors |= err
 
-            # prepare the return value
+            # assemble per-step log
             log = {
-                'fluents': fluents,
                 'reward': reward,
                 'error': errors,
                 'precondition': precond_check,
                 'invariant': invariant_check,
                 'termination': terminated_check
             }
+            if log_fluents:
+                log['fluents'] = fluents
+            if log_actions:
+                # actions_to_log is a dict of arrays (same shapes as policy output for this step)
+                log['action'] = actions_to_log
+
             if constraint_func:
                 log['inequalities'] = inequalities
                 log['equalities'] = equalities
@@ -374,63 +356,40 @@ class JaxRDDLCompiler:
                          constraint_func: bool = False,
                          init_params_constr: Dict[str, Any] = {},
                          model_params_reduction: Callable = lambda x: x[0],
-                         cache_path_info: bool = False) -> Callable:
-        '''Compiles the current RDDL model into a JAX transition function that
-        samples trajectories with a fixed horizon from a policy.
-
-        The arguments of the returned function is:
-            - key is the PRNG key (used by a stochastic policy)
-            - policy_params is a pytree of trainable policy weights
-            - hyperparams is a pytree of (optional) fixed policy hyper-parameters
-            - subs is the dictionary of current fluent tensor values
-            - model_params is a dict of model hyperparameters.
-
-        The returned value of the returned function is:
-            - log is the dictionary of all trajectory information, including
-              constraints that were satisfied, errors, etc
-            - model_params is the final set of model parameters.
-
-        The arguments of the policy function is:
-            - key is the PRNG key (used by a stochastic policy)
-            - params is a pytree of trainable policy weights
-            - hyperparams is a pytree of (optional) fixed policy hyper-parameters
-            - step is the time index of the decision in the current rollout
-            - states is a dict of tensors for the current observation.
-
-        :param policy: a Jax compiled function for the policy as described above
-        decision epoch, state dict, and an RNG key and returns an action dict
-        :param n_steps: the rollout horizon
-        :param n_batch: how many rollouts each batch performs
-        :param check_constraints: whether state, action and termination
-        conditions should be checked on each time step: this info is stored in the
-        returned log and does not raise an exception
-        :param constraint_func: produces the h(s, a) constraint function
-        in addition to the usual outputs
-        :param model_params_reduction: how to aggregate updated model_params across runs
-        in the batch (defaults to selecting the first element's parameters in the batch)
-        :param cache_path_info: whether to save full path traces as part of the log
+                         cache_path_info: bool = False,
+                         log_actions: bool = False,
+                         log_fluents: bool = False) -> Callable:
+        '''Compiles batched rollouts from a policy.
+           Adds:
+             - log_actions: include per-step actions in log['action']
+             - log_fluents: include per-step fluents in log['fluents']
+           Note: cache_path_info=True is treated as log_fluents=True for compatibility.
         '''
+        # Back-compat
+        if cache_path_info:
+            log_fluents = True
+
         rddl = self.rddl
         jax_step_fn = self.compile_transition(
-            check_constraints, constraint_func, init_params_constr, cache_path_info)
+            check_constraints=check_constraints,
+            constraint_func=constraint_func,
+            init_params_constr=init_params_constr,
+            cache_path_info=False,  # handled by log_fluents
+            log_actions=log_actions,
+            log_fluents=log_fluents
+        )
 
-        # for POMDP only observ-fluents are assumed visible to the policy
-        if rddl.observ_fluents:
-            observed_vars = rddl.observ_fluents
-        else:
-            observed_vars = rddl.state_fluents
+        # observable vars for (PO)MDP
+        observed_vars = rddl.observ_fluents if rddl.observ_fluents else rddl.state_fluents
 
-        # evaluate the step from the policy
         def _jax_wrapped_single_step_policy(key, policy_params, hyperparams,
                                             step, subs, model_params):
-            states = {var: values
-                      for (var, values) in subs.items()
-                      if var in observed_vars}
+            # policy sees only observed vars
+            states = {var: values for (var, values) in subs.items() if var in observed_vars}
             actions = policy(key, policy_params, hyperparams, step, states)
             key, subkey = random.split(key)
             return jax_step_fn(subkey, actions, subs, model_params)
 
-        # do a batched step update from the policy
         def _jax_wrapped_batched_step_policy(carry, step):
             key, policy_params, hyperparams, subs, model_params = carry
             key, *subkeys = random.split(key, num=1 + n_batch)
@@ -439,18 +398,24 @@ class JaxRDDLCompiler:
                 _jax_wrapped_single_step_policy,
                 in_axes=(0, None, None, None, 0, None)
             )(keys, policy_params, hyperparams, step, subs, model_params)
+
+            # reduce model params across batch if they are updated
             model_params = jax.tree_util.tree_map(model_params_reduction, model_params)
+
+            # carry forward
             carry = (key, policy_params, hyperparams, subs, model_params)
             return carry, log
-
-            # do a batched roll-out from the policy
 
         def _jax_wrapped_batched_rollout(key, policy_params, hyperparams,
                                          subs, model_params):
             start = (key, policy_params, hyperparams, subs, model_params)
             steps = jnp.arange(n_steps)
-            end, log = jax.lax.scan(_jax_wrapped_batched_step_policy, start, steps)
-            log = jax.tree_util.tree_map(partial(jnp.swapaxes, axis1=0, axis2=1), log)
+            end, log_seq = jax.lax.scan(_jax_wrapped_batched_step_policy, start, steps)
+
+            # log_seq is a pytree with leading axis T, batched inside;
+            # swap T and B so shapes become [B, T, ...] for arrays.
+            log = jax.tree_util.tree_map(partial(jnp.swapaxes, axis1=0, axis2=1), log_seq)
+
             model_params = end[-1]
             return log, model_params
 
