@@ -78,7 +78,8 @@ from pyRDDLGym_jax.core import logic
 # from pyRDDLGym_jax.core.compiler import JaxRDDLCompiler
 from pyRDDLGym_jax.core.logic import Logic, FuzzyLogic
 
-from SDRP.core.compiler import JaxRDDLCompiler
+from .compiler import JaxRDDLCompiler
+
 
 # try to load the dash board
 try:
