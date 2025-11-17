@@ -2276,7 +2276,9 @@ class JaxBackpropPlanner:
             rewards = log['reward']  # [B, T]
             B, T = rewards.shape
 
+            print(policy_hyperparams.get('exploration_std', 0.0))
             sigma_b = jnp.asarray(policy_hyperparams.get('exploration_std', 0.0), dtype=self.compiled.REAL)
+            print(sigma_b)
             if sigma_b == 0:
                 returns = _jax_wrapped_returns(rewards)
                 utility = utility_fn(returns, **utility_kwargs)
