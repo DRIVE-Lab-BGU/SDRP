@@ -60,9 +60,6 @@ from pyRDDLGym import RDDLEnv
 from tqdm import tqdm, TqdmWarning
 import warnings
 
-from jax import config as jcfg
-jcfg.update("jax_disable_jit", True)
-
 warnings.filterwarnings("ignore", category=TqdmWarning)
 
 from pyRDDLGym.core.compiler.initializer import RDDLValueInitializer
@@ -2500,6 +2497,7 @@ class JaxBackpropPlanner:
             _n_keys = jnp.array(len(log.keys()))
             jax.debug.print("log has 'action'? {h} | log has 'release'? {r} | n_keys={n}", h=_has_action, r=_has_release, n=_n_keys)
 
+            releases = log['release']
             actions = log['action']
             fluents = log['fluents']
             rewards = log['reward']  # [B, T]
