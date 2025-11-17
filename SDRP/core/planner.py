@@ -2253,6 +2253,7 @@ class JaxBackpropPlanner:
 
         def _jax_wrapped_plan_loss(key, policy_params, policy_hyperparams, subs, model_params):
             log, model_params = rollouts(key, policy_params, policy_hyperparams, subs, model_params)
+            jax.debug.print("log keys: {k}", k=tuple(log.keys()))
             rewards = log['reward']  # [B, T]
             B, T = rewards.shape
 
