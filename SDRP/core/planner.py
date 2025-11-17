@@ -60,6 +60,9 @@ from pyRDDLGym import RDDLEnv
 from tqdm import tqdm, TqdmWarning
 import warnings
 
+from jax import config as jcfg
+jcfg.update("jax_disable_jit", True)
+
 warnings.filterwarnings("ignore", category=TqdmWarning)
 
 from pyRDDLGym.core.compiler.initializer import RDDLValueInitializer
@@ -3102,7 +3105,7 @@ class JaxBackpropPlanner:
         # progress bar
         if print_progress:
             progress_bar = tqdm(None, total=100, position=tqdm_position,
-                                bar_format='{l_bar}{bar}| {elapsed} {postfix}',disable=True)
+                                bar_format='{l_bar}{bar}| {elapsed} {postfix}')
         else:
             progress_bar = None
         position_str = '' if tqdm_position is None else f'[{tqdm_position}]'
