@@ -2276,16 +2276,40 @@ class JaxBackpropPlanner:
             rewards = log['reward']  # [B, T]
             B, T = rewards.shape
 
-            print(policy_hyperparams.get('exploration_std', 0.0))
+
+
             sigma_b = jnp.asarray(policy_hyperparams.get('exploration_std', 0.0), dtype=self.compiled.REAL)
-            print(sigma_b)
-            if sigma_b == 0:
+            sigma_t = jnp.asarray(policy_hyperparams.get('target_std',
+                                                         policy_hyperparams.get('exploration_std', 0.0)),
+                                  dtype=self.compiled.REAL)
+
+            # predicate must be a JAX scalar bool
+            use_plain = jnp.all(jnp.isclose(sigma_b, 0.0))
+
+            def _no_is_case(_):
                 returns = _jax_wrapped_returns(rewards)
                 utility = utility_fn(returns, **utility_kwargs)
                 return -utility, (log, model_params)
 
-            sigma_t = jnp.asarray(policy_hyperparams.get('target_std', policy_hyperparams.get('exploration_std', 0.0)),
-                                  dtype=self.compiled.REAL)
+            def _is_case(_):
+                # ... keep the IS code path you already wrote here ...
+                # (computing rho_bt, w_bt, rewards_weighted, returns, utility)
+                return -utility, (log, model_params)
+
+            loss, aux = jax.lax.cond(use_plain, _no_is_case, _is_case, operand=None)
+            return loss, aux
+
+
+
+
+            # sigma_b = jnp.asarray(policy_hyperparams.get('exploration_std', 0.0), dtype=self.compiled.REAL)
+            # if sigma_b == 0:
+            #     returns = _jax_wrapped_returns(rewards)
+            #     utility = utility_fn(returns, **utility_kwargs)
+            #     return -utility, (log, model_params)
+            #
+            # sigma_t = jnp.asarray(policy_hyperparams.get('target_std', policy_hyperparams.get('exploration_std', 0.0)),
+            #                       dtype=self.compiled.REAL)
 
             # rollouts should expose actions and fluents over time
             actions_over_time = log['action']  # {name: [B, T, ...]}  (post-clip actions)
