@@ -2194,7 +2194,7 @@ class JaxBackpropPlanner:
 
         return _jax_wrapped_returns
 
-    def _jax_loss_IS(self, rollouts, use_symlog=False):
+    def _jax_loss_IS_clipped(self, rollouts, use_symlog=False):
         utility_fn = self.utility
         utility_kwargs = self.utility_kwargs
         _jax_wrapped_returns = self._jax_return(use_symlog)
@@ -2316,7 +2316,7 @@ class JaxBackpropPlanner:
 
         return _jax_wrapped_plan_loss
 
-    def _jax_loss(self, rollouts, use_symlog=False):
+    def _jax_loss_IS_error(self, rollouts, use_symlog=False):
         utility_fn = self.utility
         utility_kwargs = self.utility_kwargs
         _jax_wrapped_returns = self._jax_return(use_symlog)
@@ -2436,6 +2436,116 @@ class JaxBackpropPlanner:
             utility = utility_fn(returns, **utility_kwargs)
             loss = -utility
             aux = (log, model_params)
+            return loss, aux
+
+        return _jax_wrapped_plan_loss
+
+    def _jax_loss(self, rollouts, use_symlog: bool = False):
+        utility_fn = self.utility
+        utility_kwargs = self.utility_kwargs
+        _jax_wrapped_returns = self._jax_return(use_symlog)
+
+        # ---- helpers ---------------------------------------------------------
+
+        def _flatten_action_dict(action_dict):
+            """Flatten {name: arr[...]} for a single (batch,time) slice into 1D vector."""
+            pieces = [jnp.ravel(arr) for arr in action_dict.values()]
+            return jnp.concatenate(pieces) if pieces else jnp.zeros((0,), dtype=self.compiled.REAL)
+
+        def _mean_actions_for_step(subs_t, params, hyperparams):
+            """
+            Deterministic DRP mean μθ(s) from the base policy (no exploration noise).
+            subs_t: dict of fluents for one (batch item, time t)
+            """
+            dummy_key = random.PRNGKey(0)
+            return self.base_train_policy(dummy_key, params, hyperparams, 0, subs_t)
+
+        def _log_gaussian(a_vec, mu_vec, sigma):
+            """log N(a ; mu, sigma^2 I) with scalar sigma."""
+            two_pi = jnp.asarray(2.0 * jnp.pi, dtype=self.compiled.REAL)
+            var = sigma * sigma
+            D = a_vec.shape[0]
+            return -0.5 * (D * jnp.log(two_pi * var) + jnp.sum((a_vec - mu_vec) ** 2) / var)
+
+        # ---- IS-aware plan loss ---------------------------------------------
+
+        def _jax_wrapped_plan_loss(key, policy_params, policy_hyperparams, subs, model_params):
+            # Roll out with the (possibly noisy) behavior policy
+            log, model_params = rollouts(key, policy_params, policy_hyperparams, subs, model_params)
+            rewards = log['reward']  # shape [B, T]
+            B, T = rewards.shape
+
+            # Behavior std as JAX scalar (may be a tracer)
+            sigma_b = jnp.asarray(policy_hyperparams.get('exploration_std', 0.0),
+                                  dtype=self.compiled.REAL)
+
+            # Predicate: if std == 0 -> no IS, else do IS
+            use_plain = jnp.all(jnp.isclose(sigma_b, 0.0))
+
+            # Everything both branches may need goes in operand (no Python closure over tracers)
+            operand = (rewards, log, model_params, policy_params, policy_hyperparams, sigma_b)
+
+            def _no_is_case(op):
+                rewards, log, model_params, policy_params, policy_hyperparams, sigma_b = op
+                returns = _jax_wrapped_returns(rewards)
+                utility_val = utility_fn(returns, **utility_kwargs)
+                return -utility_val, (log, model_params)
+
+            def _is_case(op):
+                rewards, log, model_params, policy_params, policy_hyperparams, sigma_b = op
+
+                # Target std falls back to behavior std if not provided
+                sigma_t = jnp.asarray(
+                    policy_hyperparams.get('target_std',
+                                           policy_hyperparams.get('exploration_std', 0.0)),
+                    dtype=self.compiled.REAL
+                )
+
+                # Numerical safety
+                eps = jnp.asarray(1e-8, dtype=self.compiled.REAL)
+                sigma_b_ = jnp.maximum(sigma_b, eps)
+                sigma_t_ = jnp.maximum(sigma_t, eps)
+
+                # Logs must contain per-step actions and fluents
+                actions_over_time = log['action']  # {name: [B, T, ...]}
+                fluents_over_time = log['fluents']  # {state: [B, T, ...]}
+
+                # Slice helpers: select a dict at time t => {key: [B, ...]}
+                def _select_t(dbt, t):
+                    return {k: v[:, t, ...] for (k, v) in dbt.items()}
+
+                # Compute per-step ratios ρ_t(b) = p_tgt(a_t|s_t) / p_beh(a_t|s_t)
+                def _ratio_at_t(t):
+                    subs_bt = _select_t(fluents_over_time, t)
+                    act_bt = _select_t(actions_over_time, t)
+
+                    def per_batch(b):
+                        subs_tb = {k: v[b] for (k, v) in subs_bt.items()}  # {state: [...]}
+                        mu_dict = _mean_actions_for_step(subs_tb, policy_params, policy_hyperparams)
+
+                        a_vec = _flatten_action_dict({k: v[b] for (k, v) in act_bt.items()})
+                        mu_vec = _flatten_action_dict(mu_dict)
+
+                        logp_tgt = _log_gaussian(a_vec, mu_vec, sigma_t_)
+                        logp_beh = _log_gaussian(a_vec, mu_vec, sigma_b_)
+                        return jnp.exp(logp_tgt - logp_beh)
+
+                    return jax.vmap(per_batch)(jnp.arange(B))  # [B]
+
+                # [T, B] -> [B, T]
+                rho_bt = jax.vmap(_ratio_at_t)(jnp.arange(T))
+                rho_bt = jnp.transpose(rho_bt, (1, 0))
+
+                # Per-decision IS weights w_t = prod_{k<=t} ρ_k
+                w_bt = jnp.cumprod(rho_bt, axis=1)  # [B, T]
+
+                # Reweight rewards, then compute objective as usual
+                rewards_weighted = rewards * w_bt
+                returns = _jax_wrapped_returns(rewards_weighted)
+                utility_val = utility_fn(returns, **utility_kwargs)
+                return -utility_val, (log, model_params)
+
+            loss, aux = jax.lax.cond(use_plain, _no_is_case, _is_case, operand)
             return loss, aux
 
         return _jax_wrapped_plan_loss
@@ -3340,7 +3450,7 @@ class JaxOfflineController(BaseAgent):
 
     use_tensor_obs = True
 
-    # sd #
+    # sd
     def __init__(self, planner: JaxBackpropPlanner,
                  key: Optional[random.PRNGKey] = None,
                  eval_hyperparams: Optional[Dict[str, Any]] = None,
