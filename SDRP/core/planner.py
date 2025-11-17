@@ -2445,6 +2445,30 @@ class JaxBackpropPlanner:
         utility_kwargs = self.utility_kwargs
         _jax_wrapped_returns = self._jax_return(use_symlog)
 
+        def _ensure_action_dict_in_log(log):
+            """
+            If the logger did not create a single log['action'] dict, but
+            logged each action fluent name separately, collect them into
+            log['action'] = {name: log[name]} when possible.
+
+            Returns the possibly-augmented log (same object if unchanged).
+            """
+            if 'action' in log:
+                return log  # already present
+
+            # Try to gather all action-fluent arrays from log
+            action_names = list(self.rddl.action_fluents.keys())
+            found = {}
+            for name in action_names:
+                if name in log:
+                    found[name] = log[name]
+
+            # If we found any, treat them as the action dictionary
+            if found:
+                log = dict(log)  # shallow copy so we can add a new key safely
+                log['action'] = found
+            return log
+
         # ---------- helpers ----------
         def _flatten_action_dict(action_dict):
             pieces = [jnp.ravel(arr) for arr in action_dict.values()]
@@ -2466,6 +2490,7 @@ class JaxBackpropPlanner:
         def _jax_wrapped_plan_loss(key, policy_params, policy_hyperparams, subs, model_params):
             # Roll out with the (possibly noisy) behavior policy
             log, model_params = rollouts(key, policy_params, policy_hyperparams, subs, model_params)
+            log = _ensure_action_dict_in_log(log)
             rewards = log['reward']  # [B, T]
             B, T = rewards.shape
 
