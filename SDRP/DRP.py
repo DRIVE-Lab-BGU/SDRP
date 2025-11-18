@@ -4,7 +4,7 @@ import os
 import csv
 
 import pyRDDLGym
-#import pyRDDLGym_jax
+from pyRDDLGym_jax.core import logic
 import matplotlib
 
 from pyRDDLGym_jax.core import (simulator,
@@ -42,7 +42,7 @@ base_path = os.path.dirname(os.path.abspath(__file__))
 #### for run  ####
 ##################
 instance = "instance_4.rddl"
-problem = "reservoir"
+problem = "race_car"
 sd_for_stoc = 0
 pass_for_save = f"log_{instance[0:-5]}_sd = {sd_for_stoc}_problem:{problem}.csv"
 
@@ -61,7 +61,11 @@ myEnv = pyRDDLGym.make(domain=domain_file,
 config_file = os.path.join(base_path, "configs", "Reservoir_DRP.cfg")
 planner_args, _, train_args = load_config(config_file)
 planner = JaxBackpropPlanner(rddl=myEnv.model, **planner_args)
+agent=  JaxOfflineController(planner, **train_args, epochs = 10 , sd=sd_for_stoc)
 
+
+
+exit()
 # The agent wraps the planner and executes training/evaluation
 #agent   = JaxOfflineController(planner, **train_args)
 #metrics = agent.evaluate(myEnv, episodes=10)
@@ -321,7 +325,7 @@ plt.show()
 # plt.figure(figsize=(10, 6))
 # plt.hist(rewards, bins=20, color='purple', alpha=0.7)
 # plt.xlabel(" Reward")
-# plt.ylabel("Frequency")
+# plt.ylabel("Frequency")   
 # plt.title(f"Reward Distribution Over steps: {basename} - DRP_no_deterministic_policy")
 # plt.grid(True)
 # plt.savefig(f"{basename}_reward_histogram_DRP.png")
