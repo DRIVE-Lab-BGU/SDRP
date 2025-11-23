@@ -1,3 +1,5 @@
+"""Torch port of pyRDDLGym_jax core logic utilities with soft relaxations."""
+
 from abc import ABCMeta, abstractmethod
 from typing import Any, Callable, Dict, Sequence, Tuple, Union
 
@@ -8,11 +10,11 @@ import torch.nn.functional as F
 def enumerate_literals(shape: Tuple[int, ...], axis: int, dtype: torch.dtype = torch.int32,
                       device=None) -> torch.Tensor:
     """Create a tensor of indices along the given axis, broadcast to `shape`."""
-    axis = axis % len(shape)
+    axis = axis % len(shape)  # keep axis in range for negative values
     literals = torch.arange(shape[axis], dtype=dtype, device=device)
     view_shape = [1] * len(shape)
     view_shape[axis] = shape[axis]
-    literals = literals.view(*view_shape)
+    literals = literals.view(*view_shape)  # reshape for broadcasting
     return literals.expand(*shape)
 
 
@@ -20,7 +22,7 @@ def _reduce_dims(tensor: torch.Tensor, axes: Union[int, Sequence[int]],
                  reduce_fn: Callable[[torch.Tensor, int], torch.Tensor]) -> torch.Tensor:
     axes_tuple = tuple(axes) if isinstance(axes, (list, tuple)) else (axes,)
     result = tensor
-    for ax in sorted(axes_tuple, reverse=True):
+    for ax in sorted(axes_tuple, reverse=True):  # reduce from last to keep axis validity
         result = reduce_fn(result, ax)
     return result
 
@@ -59,11 +61,11 @@ class SigmoidComparison(Comparison):
     """Comparison operations approximated using sigmoid functions."""
 
     def __init__(self, weight: float = 10.0) -> None:
-        self.weight = float(weight)
+        self.weight = float(weight)  # scaling factor for soft boundaries
 
     def greater_equal(self, id, init_params):
         id_ = str(id)
-        init_params[id_] = self.weight
+        init_params[id_] = self.weight  # stash per-call weight so params stays mutable
 
         def _torch_wrapped_calc_greater_equal_approx(x, y, params):
             x_t = torch.as_tensor(x)
@@ -79,7 +81,7 @@ class SigmoidComparison(Comparison):
 
     def equal(self, id, init_params):
         id_ = str(id)
-        init_params[id_] = self.weight
+        init_params[id_] = self.weight  # tighten/loosen equality sharpness
 
         def _torch_wrapped_calc_equal_approx(x, y, params):
             x_t = torch.as_tensor(x)
@@ -92,7 +94,7 @@ class SigmoidComparison(Comparison):
 
     def sgn(self, id, init_params):
         id_ = str(id)
-        init_params[id_] = self.weight
+        init_params[id_] = self.weight  # same slope shared across calls
 
         def _torch_wrapped_calc_sgn_approx(x, params):
             x_t = torch.as_tensor(x)
@@ -104,7 +106,7 @@ class SigmoidComparison(Comparison):
 
     def argmax(self, id, init_params):
         id_ = str(id)
-        init_params[id_] = self.weight
+        init_params[id_] = self.weight  # reuse weight to control softmax temperature
 
         def _torch_wrapped_calc_argmax_approx(x, axis, params):
             x_t = torch.as_tensor(x)
@@ -112,7 +114,7 @@ class SigmoidComparison(Comparison):
             weight = torch.as_tensor(params[id_], dtype=x_t.dtype, device=x_t.device)
             literals = enumerate_literals(tuple(x_t.shape), axis=axis,
                                           dtype=x_t.dtype, device=x_t.device)
-            softmax = torch.softmax(weight * x_t, dim=axis)
+            softmax = torch.softmax(weight * x_t, dim=axis)  # temperature-controlled soft argmax
             sample = torch.sum(literals * softmax, dim=axis)
             return sample, params
 
@@ -144,11 +146,11 @@ class SoftRounding(Rounding):
     """Rounding operations approximated using soft operations."""
 
     def __init__(self, weight: float = 10.0) -> None:
-        self.weight = float(weight)
+        self.weight = float(weight)  # controls steepness of soft transitions
 
     def floor(self, id, init_params):
         id_ = str(id)
-        init_params[id_] = self.weight
+        init_params[id_] = self.weight  # stored to keep params mutable across calls
 
         def _torch_wrapped_calc_floor_approx(x, params):
             x_t = torch.as_tensor(x)
@@ -162,7 +164,7 @@ class SoftRounding(Rounding):
 
     def round(self, id, init_params):
         id_ = str(id)
-        init_params[id_] = self.weight
+        init_params[id_] = self.weight  # stored to keep params mutable across calls
 
         def _torch_wrapped_calc_round_approx(x, params):
             x_t = torch.as_tensor(x)
@@ -240,6 +242,7 @@ class ProductTNorm(TNorm):
 
     @staticmethod
     def _torch_wrapped_calc_forall_approx(x, axis, params):
+        # fold product across possibly multiple axes
         axes = tuple(axis) if isinstance(axis, (list, tuple)) else (axis,)
         result = x
         for ax in sorted(axes, reverse=True):
@@ -265,6 +268,7 @@ class GodelTNorm(TNorm):
 
     @staticmethod
     def _torch_wrapped_calc_forall_approx(x, axis, params):
+        # apply min along each axis sequentially
         axes = tuple(axis) if isinstance(axis, (list, tuple)) else (axis,)
         result = x
         for ax in sorted(axes, reverse=True):
@@ -393,7 +397,7 @@ class SoftRandomSampling(RandomSampling):
 
     @staticmethod
     def _get_generator(key: Any) -> Union[torch.Generator, None]:
-        return key if isinstance(key, torch.Generator) else None
+        return key if isinstance(key, torch.Generator) else None  # allow caller to pass RNG
 
     # https://arxiv.org/pdf/1611.01144
     def discrete(self, id, init_params, logic):
@@ -403,7 +407,7 @@ class SoftRandomSampling(RandomSampling):
             gen = self._get_generator(key)
             prob_t = torch.as_tensor(prob, dtype=logic.REAL)
             U = torch.rand(prob_t.shape, generator=gen, device=prob_t.device, dtype=prob_t.dtype)
-            gumbel = -torch.log(-torch.log(U.clamp_min(logic.eps)))
+            gumbel = -torch.log(-torch.log(U.clamp_min(logic.eps)))  # standard Gumbel(0,1)
             sample = gumbel + torch.log(prob_t + logic.eps)
             return argmax_approx(sample, axis=-1, params=params)
 
@@ -421,7 +425,7 @@ class SoftRandomSampling(RandomSampling):
             rate_expanded = rate_t.unsqueeze(-1)
             log_prob = ks * torch.log(rate_expanded + logic.eps) - rate_expanded - torch.lgamma(ks + 1)
             U = torch.rand_like(log_prob, generator=gen)
-            gumbel = -torch.log(-torch.log(U.clamp_min(logic.eps)))
+            gumbel = -torch.log(-torch.log(U.clamp_min(logic.eps)))  # Gumbel noise
             sample = gumbel + log_prob
             return argmax_approx(sample, axis=-1, params=params)
 
@@ -435,7 +439,7 @@ class SoftRandomSampling(RandomSampling):
             rate_t = torch.as_tensor(rate, dtype=logic.REAL)
             shape = (self.poisson_bins,) + tuple(rate_t.shape)
             U = torch.rand(shape, generator=gen, device=rate_t.device, dtype=logic.REAL)
-            Exp1 = -torch.log(U.clamp_min(logic.eps))
+            Exp1 = -torch.log(U.clamp_min(logic.eps))  # exponential(1) samples
             delta_t = Exp1 / rate_t.unsqueeze(0)
             times = torch.cumsum(delta_t, dim=0)
             indicator, params = less_approx(times, 1.0, params)
@@ -449,7 +453,7 @@ class SoftRandomSampling(RandomSampling):
             gen = self._get_generator(key)
             rate_t = torch.as_tensor(rate, dtype=logic.REAL)
             normal = torch.randn(rate_t.shape, generator=gen, device=rate_t.device, dtype=logic.REAL)
-            sample = rate_t + torch.sqrt(rate_t) * normal
+            sample = rate_t + torch.sqrt(rate_t) * normal  # Normal(rate, rate)
             return sample, params
 
         return _torch_wrapped_calc_poisson_normal_approx
@@ -473,13 +477,13 @@ class SoftRandomSampling(RandomSampling):
                 gamma_func = torch.exp(torch.lgamma(k_plus_one))
                 lower_reg = lower / gamma_func
                 return 1.0 - lower_reg
-            return torch.ones_like(rate_tensor)
+            return torch.ones_like(rate_tensor)  # fallback avoids crashing when cdf unavailable
 
         def _torch_wrapped_calc_poisson_approx(key, rate, params):
             rate_t = torch.as_tensor(rate, dtype=logic.REAL)
             if self.poisson_bins > 0:
                 cuml_prob = _poisson_cdf_bins(rate_t)
-                small_rate = cuml_prob >= self.poisson_min_cdf
+                small_rate = cuml_prob >= self.poisson_min_cdf  # truncate if mass within bins
                 small_sample, params = _torch_wrapped_calc_poisson_diff(key, rate_t, params)
                 large_sample, params = _torch_wrapped_calc_poisson_normal(key, rate_t, params)
                 sample = torch.where(small_rate, small_sample, large_sample)
@@ -525,7 +529,7 @@ class SoftRandomSampling(RandomSampling):
                                    torch.log(torch.tensor(logic.eps, dtype=log_prob.dtype,
                                                           device=log_prob.device)))
             U = torch.rand_like(log_prob, generator=gen)
-            gumbel = -torch.log(-torch.log(U.clamp_min(logic.eps)))
+            gumbel = -torch.log(-torch.log(U.clamp_min(logic.eps)))  # Gumbel noise
             sample = gumbel + log_prob
             return argmax_approx(sample, axis=-1, params=params)
 
@@ -538,7 +542,7 @@ class SoftRandomSampling(RandomSampling):
         def _torch_wrapped_calc_binomial_approx(key, trials, prob, params):
             trials_t = torch.as_tensor(trials, dtype=logic.REAL)
             prob_t = torch.as_tensor(prob, dtype=logic.REAL, device=trials_t.device)
-            small_trials = trials_t < self.binomial_bins
+            small_trials = trials_t < self.binomial_bins  # switch to normal approx when large
             small_sample, params = _torch_wrapped_calc_binomial_gs(key, trials_t, prob_t, params)
             large_sample, params = _torch_wrapped_calc_binomial_normal(key, trials_t, prob_t, params)
             sample = torch.where(small_trials, small_sample, large_sample)
@@ -553,8 +557,9 @@ class SoftRandomSampling(RandomSampling):
             gen = self._get_generator(key)
             trials_t = torch.as_tensor(trials, dtype=logic.REAL)
             prob_t = torch.as_tensor(prob, dtype=logic.REAL, device=trials_t.device)
+            # gamma-poisson mixture for Negative Binomial
             Gamma = torch.distributions.Gamma(trials_t, torch.tensor(1.0, dtype=logic.REAL,
-                                                                     device=trials_t.device)).sample()
+                                                                     device=trials_t.device)).sample(generator=gen)
             scale = (1.0 - prob_t) / prob_t
             poisson_rate = scale * Gamma
             return poisson_approx(key, poisson_rate, params)
@@ -568,6 +573,7 @@ class SoftRandomSampling(RandomSampling):
             gen = self._get_generator(key)
             prob_t = torch.as_tensor(prob, dtype=logic.REAL)
             U = torch.rand(prob_t.shape, generator=gen, device=prob_t.device, dtype=logic.REAL)
+            # inverse-CDF using soft floor
             floor, params = approx_floor(torch.log1p(-U) / torch.log1p(-prob_t + logic.eps), params)
             sample = floor + 1
             return sample, params
@@ -590,7 +596,7 @@ class SoftRandomSampling(RandomSampling):
 
         def _torch_wrapped_calc_bernoulli_gumbel_softmax(key, prob, params):
             prob_t = torch.as_tensor(prob, dtype=logic.REAL)
-            prob = torch.stack([1.0 - prob_t, prob_t], dim=-1)
+            prob = torch.stack([1.0 - prob_t, prob_t], dim=-1)  # two-class categorical
             return discrete_approx(key, prob, params)
 
         return _torch_wrapped_calc_bernoulli_gumbel_softmax
@@ -612,7 +618,7 @@ class Determinization(RandomSampling):
     def _torch_wrapped_calc_discrete_determinized(key, prob, params):
         prob_t = torch.as_tensor(prob)
         literals = enumerate_literals(tuple(prob_t.shape), axis=-1, dtype=prob_t.dtype, device=prob_t.device)
-        sample = torch.sum(literals * prob_t, dim=-1)
+        sample = torch.sum(literals * prob_t, dim=-1)  # expected value of categorical
         return sample, params
 
     def discrete(self, id, init_params, logic):
@@ -682,11 +688,11 @@ class SoftControlFlow(ControlFlow):
     """Soft control flow using a probabilistic interpretation."""
 
     def __init__(self, weight: float = 10.0) -> None:
-        self.weight = float(weight)
+        self.weight = float(weight)  # temperature for soft switch
 
     @staticmethod
     def _torch_wrapped_calc_if_then_else_soft(c, a, b, params):
-        sample = c * a + (1.0 - c) * b
+        sample = c * a + (1.0 - c) * b  # convex combination by soft predicate
         return sample, params
 
     def if_then_else(self, id, init_params):
@@ -694,7 +700,7 @@ class SoftControlFlow(ControlFlow):
 
     def switch(self, id, init_params):
         id_ = str(id)
-        init_params[id_] = self.weight
+        init_params[id_] = self.weight  # store temperature per call
 
         def _torch_wrapped_calc_switch_soft(pred, cases, params):
             cases_t = torch.as_tensor(cases)
@@ -702,8 +708,8 @@ class SoftControlFlow(ControlFlow):
             literals = enumerate_literals(tuple(cases_t.shape), axis=0,
                                           dtype=cases_t.dtype, device=cases_t.device)
             pred_t = pred_t.unsqueeze(0).expand_as(cases_t)
-            proximity = -(pred_t - literals).pow(2)
-            softcase = torch.softmax(params[id_] * proximity, dim=0)
+            proximity = -(pred_t - literals).pow(2)  # favor close indices
+            softcase = torch.softmax(params[id_] * proximity, dim=0)  # temperature from stored weight
             sample = torch.sum(cases_t * softcase, dim=0)
             return sample, params
 
@@ -741,6 +747,7 @@ class Logic(metaclass=ABCMeta):
 
     @staticmethod
     def wrap_logic(func):
+        # wrap a pure function into the (id, init_params) signature expected by callers
         def exact_func(id, init_params):
             return func
         return exact_func
@@ -1005,7 +1012,7 @@ class ExactLogic(Logic):
     @staticmethod
     def exact_aggregation(op):
         def _torch_wrapped_calc_aggregation_exact(x, axis, params):
-            axis_tuple = tuple(axis) if isinstance(axis, (list, tuple)) else axis
+            axis_tuple = tuple(axis) if isinstance(axis, (list, tuple)) else axis  # support multi-axis reductions
             return op(x, dim=axis_tuple), params
         return _torch_wrapped_calc_aggregation_exact
 
@@ -1118,7 +1125,7 @@ class ExactLogic(Logic):
             cases_t = torch.as_tensor(cases)
             pred_t = torch.as_tensor(pred, dtype=self.INT, device=cases_t.device)
             pred_t = pred_t.unsqueeze(0)
-            sample = torch.take_along_dim(cases_t, pred_t, dim=0)
+            sample = torch.take_along_dim(cases_t, pred_t, dim=0)  # deterministic gather
             assert sample.shape[0] == 1
             return sample[0, ...], params
         return _torch_wrapped_calc_switch_exact
@@ -1131,7 +1138,7 @@ class ExactLogic(Logic):
     def _torch_wrapped_calc_discrete_exact(key, prob, params):
         prob_t = torch.as_tensor(prob)
         gen = key if isinstance(key, torch.Generator) else None
-        sample = torch.multinomial(prob_t, num_samples=1, generator=gen).squeeze(-1)
+        sample = torch.multinomial(prob_t, num_samples=1, generator=gen).squeeze(-1)  # categorical draw
         sample = sample.to(prob_t.device, dtype=torch.int64)
         return sample, params
 
@@ -1151,7 +1158,7 @@ class ExactLogic(Logic):
         def _torch_wrapped_calc_poisson_exact(key, rate, params):
             gen = key if isinstance(key, torch.Generator) else None
             rate_t = torch.as_tensor(rate, dtype=self.REAL)
-            sample = torch.poisson(rate_t, generator=gen).to(self.INT)
+            sample = torch.poisson(rate_t, generator=gen).to(self.INT)  # torch poisson supports generator
             return sample, params
         return _torch_wrapped_calc_poisson_exact
 
@@ -1160,7 +1167,7 @@ class ExactLogic(Logic):
             gen = key if isinstance(key, torch.Generator) else None
             prob_t = torch.as_tensor(prob, dtype=self.REAL)
             U = torch.rand(prob_t.shape, generator=gen, device=prob_t.device, dtype=self.REAL)
-            sample = torch.floor(torch.log1p(-U) / torch.log1p(-prob_t)) + 1
+            sample = torch.floor(torch.log1p(-U) / torch.log1p(-prob_t)) + 1  # inverse-CDF
             sample = sample.to(self.INT)
             return sample, params
         return _torch_wrapped_calc_geometric_exact
@@ -1169,7 +1176,7 @@ class ExactLogic(Logic):
         def _torch_wrapped_calc_binomial_exact(key, trials, prob, params):
             trials_t = torch.as_tensor(trials, dtype=self.REAL)
             prob_t = torch.as_tensor(prob, dtype=self.REAL, device=trials_t.device)
-            dist = torch.distributions.Binomial(total_count=trials_t, probs=prob_t)
+            dist = torch.distributions.Binomial(total_count=trials_t, probs=prob_t)  # vectorized Bin(n,p)
             sample = dist.sample().to(self.INT)
             return sample, params
         return _torch_wrapped_calc_binomial_exact
@@ -1196,13 +1203,13 @@ class FuzzyLogic(Logic):
                  eps: float = 1e-15,
                  use64bit: bool = False) -> None:
         super().__init__(use64bit=use64bit)
-        self.tnorm = tnorm
-        self.complement = complement
-        self.comparison = comparison
-        self.sampling = sampling
-        self.rounding = rounding
-        self.control = control
-        self.eps = eps
+        self.tnorm = tnorm  # fuzzy AND
+        self.complement = complement  # fuzzy NOT
+        self.comparison = comparison  # relaxed comparisons
+        self.sampling = sampling  # relaxed sampling for discrete RVs
+        self.rounding = rounding  # relaxed rounding ops
+        self.control = control  # relaxed control flow
+        self.eps = eps  # underflow guard
 
     def __str__(self) -> str:
         return (f'model relaxation:\n'
@@ -1237,7 +1244,7 @@ class FuzzyLogic(Logic):
         def _torch_wrapped_calc_or_approx(x, y, params):
             not_x, params = _not1(x, params)
             not_y, params = _not2(y, params)
-            not_x_and_not_y, params = _and(not_x, not_y, params)
+            not_x_and_not_y, params = _and(not_x, not_y, params)  # De Morgan to build OR
             return _not(not_x_and_not_y, params)
 
         return _torch_wrapped_calc_or_approx
@@ -1288,7 +1295,7 @@ class FuzzyLogic(Logic):
 
         def _torch_wrapped_calc_exists_approx(x, axis, params):
             not_x, params = _not1(x, params)
-            forall_not_x, params = _forall(not_x, axis, params)
+            forall_not_x, params = _forall(not_x, axis, params)  # exists = not forall not x
             return _not2(forall_not_x, params)
 
         return _torch_wrapped_calc_exists_approx
@@ -1307,7 +1314,7 @@ class FuzzyLogic(Logic):
         _greater_eq = self.greater_equal(id, init_params)
 
         def _torch_wrapped_calc_leq_approx(x, y, params):
-            return _greater_eq(-x, -y, params)
+            return _greater_eq(-x, -y, params)  # reuse >= by flipping signs
 
         return _torch_wrapped_calc_leq_approx
 
@@ -1315,7 +1322,7 @@ class FuzzyLogic(Logic):
         _greater = self.greater(id, init_params)
 
         def _torch_wrapped_calc_less_approx(x, y, params):
-            return _greater(-x, -y, params)
+            return _greater(-x, -y, params)  # reuse > by flipping signs
 
         return _torch_wrapped_calc_less_approx
 
@@ -1358,7 +1365,7 @@ class FuzzyLogic(Logic):
         _floor = self.rounding.floor(id, init_params)
 
         def _torch_wrapped_calc_div_approx(x, y, params):
-            return _floor(x / y, params)
+            return _floor(x / y, params)  # relaxed floor division
 
         return _torch_wrapped_calc_div_approx
 
@@ -1367,13 +1374,13 @@ class FuzzyLogic(Logic):
 
         def _torch_wrapped_calc_mod_approx(x, y, params):
             div, params = _div(x, y, params)
-            return x - y * div, params
+            return x - y * div, params  # x mod y using relaxed div
 
         return _torch_wrapped_calc_mod_approx
 
     def sqrt(self, id, init_params):
         def _torch_wrapped_calc_sqrt_approx(x, params):
-            return torch.sqrt(x + self.eps), params
+            return torch.sqrt(x + self.eps), params  # add epsilon to avoid NaNs at 0
 
         return _torch_wrapped_calc_sqrt_approx
 
@@ -1388,7 +1395,7 @@ class FuzzyLogic(Logic):
         _argmax = self.argmax(id, init_params)
 
         def _torch_wrapped_calc_argmin_approx(x, axis, param):
-            return _argmax(-x, axis, param)
+            return _argmax(-x, axis, param)  # argmin(x) = argmax(-x)
 
         return _torch_wrapped_calc_argmin_approx
 
