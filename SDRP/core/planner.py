@@ -2151,6 +2151,7 @@ class JaxBackpropPlanner:
             n_batch=self.batch_size_test,
             cache_path_info=False,
             log_actions=True,  # <-- THIS enables log['action']
+            log_fluents=True  # <-- optional but useful for IS
         )
         self.test_rollouts = jax.jit(test_rollouts)
 
@@ -2495,7 +2496,7 @@ class JaxBackpropPlanner:
         def _jax_wrapped_plan_loss(key, policy_params, policy_hyperparams, subs, model_params):
             # Roll out with the (possibly noisy) behavior policy
             log, model_params = rollouts(key, policy_params, policy_hyperparams, subs, model_params)
-            # print(log["action"])
+            print(log["action"])
             log = _ensure_action_dict_in_log(log)
 
             rewards = log['reward']  # [B, T]
