@@ -2149,7 +2149,8 @@ class JaxBackpropPlanner:
             policy=self.plan.test_policy,
             n_steps=self.horizon,
             n_batch=self.batch_size_test,
-            cache_path_info=False
+            cache_path_info=False,
+            log_actions=True,  # <-- THIS enables log['action']
         )
         self.test_rollouts = jax.jit(test_rollouts)
 
@@ -2496,7 +2497,7 @@ class JaxBackpropPlanner:
             log, model_params = rollouts(key, policy_params, policy_hyperparams, subs, model_params)
             # print(log["action"])
             log = _ensure_action_dict_in_log(log)
-            print(log["action"])
+
             rewards = log['reward']  # [B, T]
             B, T = rewards.shape
 
