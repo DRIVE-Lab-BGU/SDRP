@@ -2487,10 +2487,22 @@ class JaxBackpropPlanner:
                         l_tgt = _log_clipped_gaussian_elem(a_vec, mu_vec, sigma_t_, lo_vec, hi_vec)
                         l_beh = _log_clipped_gaussian_elem(a_vec, mu_vec, sigma_b_, lo_vec, hi_vec)
 
+                        jax.debug.print(
+                            "[DBG] step {t}, batch {b}: any nan l_tgt={nt}, l_beh={nb}, mean l_tgt={mt}, mean l_beh={mb}",
+                            t=t, b=b,
+                            nt=jnp.any(jnp.isnan(l_tgt)),
+                            nb=jnp.any(jnp.isnan(l_beh)),
+                            mt=jnp.nanmean(l_tgt),
+                            mb=jnp.nanmean(l_beh)
+                        )
+
                         # If both are -inf (mass ~ 0 under both), define contribution as 0 (ratio 1)
                         both_neg_inf = jnp.isneginf(l_tgt) & jnp.isneginf(l_beh)
                         delta = l_tgt - l_beh
                         delta = jnp.where(both_neg_inf, 0.0, delta)
+
+                        jax.debug.print("[DBG] delta any nan? {x}, mean={m}", x=jnp.any(jnp.isnan(delta)),
+                                        m=jnp.nanmean(delta))
 
                         # Total log-ratio for this (b, t)
                         return jnp.sum(delta)
@@ -2501,14 +2513,34 @@ class JaxBackpropPlanner:
                 log_rho_bt = jax.vmap(_log_ratio_at_t)(jnp.arange(T))
                 log_rho_bt = jnp.transpose(log_rho_bt, (1, 0))  # [B, T]
 
+                jax.debug.print(
+                    "[DBG] after log_rho_bt: any nan={nan}, any inf={inf}, mean={m}",
+                    nan=jnp.any(jnp.isnan(log_rho_bt)),
+                    inf=jnp.any(jnp.isinf(log_rho_bt)),
+                    m=jnp.nanmean(log_rho_bt)
+                )
+
                 # Cumulate in log-space and clip to avoid overflow/underflow
                 log_w_bt = jnp.cumsum(log_rho_bt, axis=1)
                 log_w_bt = jnp.clip(log_w_bt, a_min=-60.0, a_max=60.0)
                 w_bt = jnp.exp(log_w_bt)
 
+                jax.debug.print(
+                    "[DBG] weights any nan={nan}, any inf={inf}, min={mn}, max={mx}, mean={m}",
+                    nan=jnp.any(jnp.isnan(w_bt)),
+                    inf=jnp.any(jnp.isinf(w_bt)),
+                    mn=jnp.nanmin(w_bt),
+                    mx=jnp.nanmax(w_bt),
+                    m=jnp.nanmean(w_bt)
+                )
+
                 rewards_weighted = rewards * w_bt
                 returns = _jax_wrapped_returns(rewards_weighted)
                 utility_val = utility_fn(returns, **utility_kwargs)
+                jax.debug.print(
+                    "[DBG] utility nan={n}, mean={m}", n=jnp.any(jnp.isnan(utility_val)), m=jnp.nanmean(utility_val)
+                )
+
                 return -utility_val, (log, model_params)
 
             # If σ≈0, skip IS; otherwise compute IS. (This is a JAX cond, safe under jit.)
