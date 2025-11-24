@@ -2696,7 +2696,45 @@ class JaxBackpropPlanner:
                     m=jnp.nanmean(w_bt),
                 )
 
-                if USE_SELF_NORM
+                if USE_SELF_NORMALIZED:
+                    sum_w = jnp.sum(w_bt, axis=1, keepdims=True)
+                    sum_w = jnp.maximum(sum_w, EPS_PROB)
+                    w_bt = w_bt / sum_w
+
+                rewards_weighted = rewards * w_bt
+
+                # --- DEBUG checkpoint 3 ---
+                jax.debug.print(
+                    "[DBG rewards] any_nan={n}, mean={m}",
+                    n=jnp.any(jnp.isnan(rewards_weighted)),
+                    m=jnp.nanmean(rewards_weighted),
+                )
+
+                returns = _jax_wrapped_returns(rewards_weighted)
+                utility_val = utility_fn(returns, **utility_kwargs)
+                utility_val = jnp.nan_to_num(utility_val, nan=0.0, posinf=0.0, neginf=0.0)
+
+                # --- DEBUG checkpoint 4 ---
+                jax.debug.print(
+                    "[DBG utility] any_nan={n}, mean={m}",
+                    n=jnp.any(jnp.isnan(utility_val)),
+                    m=jnp.nanmean(utility_val),
+                )
+
+                return -utility_val, (log, model_params)
+
+            loss, aux = jax.lax.cond(use_plain, _no_is_case, _is_case, operand)
+
+            # --- DEBUG checkpoint 5 ---
+            jax.debug.print(
+                "[DBG loss] any_nan={n}, mean={m}",
+                n=jnp.any(jnp.isnan(loss)),
+                m=jnp.nanmean(loss),
+            )
+
+            return loss, aux
+
+        return _jax_wrapped_plan_loss
 
     # Working path!
     def _jax_loss_IS_Unclipped(self, rollouts, use_symlog: bool = False):
