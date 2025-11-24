@@ -12,9 +12,10 @@ import torch.nn.functional as F
 # maybe it is not necessary 
 ########################################################
 
+## to do 
+# 1  understand the argmax of sigmoid comparison
 
-
-
+## 
 
 
 
@@ -86,7 +87,7 @@ class Comparison(metaclass=ABCMeta):
     @abstractmethod
     def argmax(self, id, init_params):
         pass
-
+#
 ### here we define SigmoidComparison class inheriting from Comparison
 # https://arxiv.org/abs/2110.05651
 class SigmoidComparison(Comparison):
@@ -184,6 +185,9 @@ class SoftRounding(Rounding):
     def __init__(self, weight: float = 10.0) -> None:
         self.weight = float(weight)  # controls steepness of soft transitions
 
+    # https://www.tensorflow.org/probability/api_docs/python/tfp/substrates/jax/bijectors/Softfloor
+
+    
     def floor(self, id, init_params):
         id_ = str(id)
         init_params[id_] = self.weight  # stored to keep params mutable across calls
@@ -213,6 +217,14 @@ class SoftRounding(Rounding):
 
     def __str__(self) -> str:
         return f'SoftFloor and SoftRound with weight {self.weight}'
+
+########################## here#####################################
+
+
+
+
+#  here i add something new
+
 
 
 # ===========================================================================
