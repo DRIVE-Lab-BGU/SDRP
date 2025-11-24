@@ -56,7 +56,7 @@ class Comparison(metaclass=ABCMeta):
     def argmax(self, id, init_params):
         pass
 
-
+### here we define SigmoidComparison class inheriting from Comparison
 class SigmoidComparison(Comparison):
     """Comparison operations approximated using sigmoid functions."""
 
