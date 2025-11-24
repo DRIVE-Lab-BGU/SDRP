@@ -2494,9 +2494,9 @@ class JaxBackpropPlanner:
         def _jax_wrapped_plan_loss(key, policy_params, policy_hyperparams, subs, model_params):
             # Roll out with the (possibly noisy) behavior policy
             log, model_params = rollouts(key, policy_params, policy_hyperparams, subs, model_params)
-            print(log["action"])
+            # print(log["action"])
             log = _ensure_action_dict_in_log(log)
-
+            print(log["action"])
             rewards = log['reward']  # [B, T]
             B, T = rewards.shape
 
