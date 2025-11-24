@@ -2455,26 +2455,24 @@ class JaxBackpropPlanner:
             def _is_case(op):
                 rewards, log, model_params, policy_params, policy_hyperparams, sigma_b = op
 
-                # Target std falls back to behavior std if not provided
                 sigma_t = jnp.asarray(
                     policy_hyperparams.get('target_std', policy_hyperparams.get('exploration_std', 0.0)),
                     dtype=self.compiled.REAL
                 )
 
-                # Numerical safety (scalar sigma)
                 eps = jnp.asarray(1e-8, dtype=self.compiled.REAL)
                 sigma_b_ = jnp.maximum(sigma_b, eps)
                 sigma_t_ = jnp.maximum(sigma_t, eps)
 
-                actions_over_time = log['action']  # {name: [B, T, ...]} (post-noise, post-clip)
+                actions_over_time = log['action']  # {name: [B, T, ...]}
                 fluents_over_time = log['fluents']  # {state: [B, T, ...]}
+                B, T = rewards.shape
 
-                # slice helpers: dict -> dict at time t
                 def _select_t(dbt, t):
                     return {k: v[:, t, ...] for (k, v) in dbt.items()}
 
-                # ρ_t(b) = p_tgt(a_t|s_t) / p_beh(a_t|s_t), using clipped-Gaussian llk
-                def _ratio_at_t(t):
+                # one timestep -> vector of log-ratios per batch
+                def _log_ratio_at_t(t):
                     subs_bt = _select_t(fluents_over_time, t)
                     act_bt = _select_t(actions_over_time, t)
 
@@ -2485,19 +2483,28 @@ class JaxBackpropPlanner:
                         a_vec, mu_vec, lo_vec, hi_vec = _flatten_action_and_mu_with_bounds(
                             {k: v[b] for (k, v) in act_bt.items()}, mu_dict
                         )
+                        # Per-element log-likelihoods
+                        l_tgt = _log_clipped_gaussian_elem(a_vec, mu_vec, sigma_t_, lo_vec, hi_vec)
+                        l_beh = _log_clipped_gaussian_elem(a_vec, mu_vec, sigma_b_, lo_vec, hi_vec)
 
-                        # elementwise then sum
-                        logp_tgt = jnp.sum(_log_clipped_gaussian_elem(a_vec, mu_vec, sigma_t_, lo_vec, hi_vec))
-                        logp_beh = jnp.sum(_log_clipped_gaussian_elem(a_vec, mu_vec, sigma_b_, lo_vec, hi_vec))
-                        return jnp.exp(logp_tgt - logp_beh)
+                        # If both are -inf (mass ~ 0 under both), define contribution as 0 (ratio 1)
+                        both_neg_inf = jnp.isneginf(l_tgt) & jnp.isneginf(l_beh)
+                        delta = l_tgt - l_beh
+                        delta = jnp.where(both_neg_inf, 0.0, delta)
+
+                        # Total log-ratio for this (b, t)
+                        return jnp.sum(delta)
 
                     return jax.vmap(per_batch)(jnp.arange(B))  # [B]
 
-                rho_bt = jax.vmap(_ratio_at_t)(jnp.arange(T))  # [T, B]
-                rho_bt = jnp.transpose(rho_bt, (1, 0))  # [B, T]
+                # [T, B] -> [B, T]
+                log_rho_bt = jax.vmap(_log_ratio_at_t)(jnp.arange(T))
+                log_rho_bt = jnp.transpose(log_rho_bt, (1, 0))  # [B, T]
 
-                # per-decision IS weights
-                w_bt = jnp.cumprod(rho_bt, axis=1)  # [B, T]
+                # Cumulate in log-space and clip to avoid overflow/underflow
+                log_w_bt = jnp.cumsum(log_rho_bt, axis=1)
+                log_w_bt = jnp.clip(log_w_bt, a_min=-60.0, a_max=60.0)
+                w_bt = jnp.exp(log_w_bt)
 
                 rewards_weighted = rewards * w_bt
                 returns = _jax_wrapped_returns(rewards_weighted)
