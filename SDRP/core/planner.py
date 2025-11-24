@@ -2322,13 +2322,38 @@ class JaxBackpropPlanner:
 
         return _jax_wrapped_plan_loss
 
-
-    def _jax_loss(self, rollouts, use_symlog=False):
+    def _jax_loss(self, rollouts, use_symlog: bool = False):
         utility_fn = self.utility
         utility_kwargs = self.utility_kwargs
         _jax_wrapped_returns = self._jax_return(use_symlog)
 
-        # ------- stable Normal helpers -------
+        # ---------- make sure we can find actions, even if logged per-name ----------
+        def _ensure_action_dict_in_log(log):
+            if 'action' in log:
+                return log
+            action_names = list(self.rddl.action_fluents.keys())
+            found = {}
+            for name in action_names:
+                if name in log:
+                    found[name] = log[name]
+            if found:
+                log = dict(log)
+                log['action'] = found
+            return log
+
+        # ---------- helpers ----------
+        def _flatten_action_dict(d):
+            pieces = [jnp.ravel(arr) for arr in d.values()]
+            if pieces:
+                return jnp.concatenate(pieces)
+            return jnp.zeros((0,), dtype=self.compiled.REAL)
+
+        def _mean_actions_for_step(subs_t, params, hyperparams):
+            # Deterministic DRP mean μθ(s) from the base (noise-free) policy
+            dummy_key = random.PRNGKey(0)
+            return self.base_train_policy(dummy_key, params, hyperparams, 0, subs_t)
+
+        # Stable Normal bits
         from jax.scipy.special import ndtr as stdnorm_cdf, log_ndtr as stdnorm_logcdf
 
         def _log_pdf_standard_normal(z):
@@ -2342,62 +2367,49 @@ class JaxBackpropPlanner:
             # log(1 - Phi(z)) = log Phi(-z)
             return stdnorm_logcdf(-z)
 
-        # ---- per-element log-prob under a **clipped** Gaussian ----
-        # If lo/hi are finite, mass outside gets collapsed onto the boundary.
-        # Expected inputs are broadcast to the same shape.
-        def _log_clipped_gaussian_per_elem(x, mu, sigma, lo, hi):
-            # numeric safety for sigma
+        # Bounds helper: turn None -> +/-inf and broadcast to action shape
+        def _broadcast_bounds_to(a, lo, hi):
+            if lo is None:
+                lo = -jnp.inf
+            if hi is None:
+                hi = jnp.inf
+            lo = jnp.asarray(lo, dtype=self.compiled.REAL)
+            hi = jnp.asarray(hi, dtype=self.compiled.REAL)
+            lo = jnp.broadcast_to(lo, jnp.shape(a))
+            hi = jnp.broadcast_to(hi, jnp.shape(a))
+            return lo, hi
+
+        # Per-element log-likelihood under a clipped Gaussian:
+        # interior: pdf; exactly at lo: mass below lo; exactly at hi: mass above hi.
+        def _log_clipped_gaussian_elem(x, mu, sigma, lo, hi):
             eps = jnp.asarray(1e-8, dtype=self.compiled.REAL)
             sigma = jnp.maximum(sigma, eps)
 
-            # detect finite bounds
+            # mask finite bounds (if bound was +/-inf, there is no point mass there)
             lo_finite = jnp.isfinite(lo)
             hi_finite = jnp.isfinite(hi)
 
-            # regions
             inside = (x > lo) & (x < hi)
             at_lo = (x == lo) & lo_finite
             at_hi = (x == hi) & hi_finite
 
-            # interior pdf
             log_pdf_inside = _log_pdf_normal(x, mu, sigma)
 
-            # lower tail mass P(X_pre <= lo)
             z_lo = (lo - mu) / sigma
-            log_mass_lo = jnp.where(
-                lo_finite,
-                stdnorm_logcdf(z_lo),
-                -jnp.inf  # no lower truncation -> zero mass at -inf boundary
-            )
-
-            # upper tail mass P(X_pre >= hi) = 1 - Phi(z_hi)
             z_hi = (hi - mu) / sigma
-            log_mass_hi = jnp.where(
-                hi_finite,
-                _log1m_cdf(z_hi),
-                -jnp.inf  # no upper truncation -> zero mass at +inf boundary
-            )
 
-            return (
-                    inside * log_pdf_inside +
-                    at_lo * log_mass_lo +
-                    at_hi * log_mass_hi
-            )
+            # P(X_pre <= lo) and P(X_pre >= hi) in log space
+            log_mass_lo = jnp.where(lo_finite, stdnorm_logcdf(z_lo), -jnp.inf)
+            log_mass_hi = jnp.where(hi_finite, _log1m_cdf(z_hi), -jnp.inf)
 
-        # Flatten {a_name: tensor[...] } and aligned μ/bounds into vectors
-        def _flatten_action_and_mu_dict(action_dict, mu_dict, bounds):
+            return inside * log_pdf_inside + at_lo * log_mass_lo + at_hi * log_mass_hi
+
+        # Build flattened (a, mu, lo, hi) vectors aligned across action names
+        def _flatten_action_and_mu_with_bounds(action_dict, mu_dict):
             xs, mus, los, his = [], [], [], []
             for name, a in action_dict.items():
-                lo, hi = bounds[name]
-                lo = jnp.asarray(lo, dtype=self.compiled.REAL)
-                hi = jnp.asarray(hi, dtype=self.compiled.REAL)
-
-                # broadcast lo/hi to a's shape
-                while jnp.ndim(lo) < jnp.ndim(a): lo = lo[None, ...]
-                while jnp.ndim(hi) < jnp.ndim(a): hi = hi[None, ...]
-                lo = jnp.broadcast_to(lo, jnp.shape(a))
-                hi = jnp.broadcast_to(hi, jnp.shape(a))
-
+                lo, hi = self.plan.bounds[name]
+                lo, hi = _broadcast_bounds_to(a, lo, hi)
                 xs.append(jnp.ravel(a))
                 mus.append(jnp.ravel(mu_dict[name]))
                 los.append(jnp.ravel(lo))
@@ -2410,90 +2422,89 @@ class JaxBackpropPlanner:
             z = jnp.zeros((0,), dtype=self.compiled.REAL)
             return z, z, z, z
 
-        # Deterministic mean μθ(s) for one (batch, time) state slice
-        def _mean_actions_for_step(subs_t, params, hyperparams):
-            dummy_key = random.PRNGKey(0)
-            return self.base_train_policy(dummy_key, params, hyperparams, 0, subs_t)
-
+        # ---------- loss with optional (clipped) IS ----------
         def _jax_wrapped_plan_loss(key, policy_params, policy_hyperparams, subs, model_params):
+            # Roll out with the (possibly noisy) behavior policy
             log, model_params = rollouts(key, policy_params, policy_hyperparams, subs, model_params)
+            log = _ensure_action_dict_in_log(log)
+
             rewards = log['reward']  # [B, T]
             B, T = rewards.shape
 
-            # If this rollout didn't record actions, skip IS safely.
-            has_action = isinstance(log, dict) and ('action' in log)
-            if not has_action:
+            # If rollouts don't expose actions/fluents, we cannot do IS -> plain objective
+            if ('action' not in log) or ('fluents' not in log):
                 returns = _jax_wrapped_returns(rewards)
                 utility_val = utility_fn(returns, **utility_kwargs)
                 return -utility_val, (log, model_params)
 
-            # behavior/target std (scalars)
+            # Behavior std as a JAX scalar (may be a tracer)
             sigma_b = jnp.asarray(policy_hyperparams.get('exploration_std', 0.0), dtype=self.compiled.REAL)
-            sigma_t = jnp.asarray(
-                policy_hyperparams.get('target_std', policy_hyperparams.get('exploration_std', 0.0)),
-                dtype=self.compiled.REAL
-            )
 
-            # tracer-safe branch: if behavior std ~ 0, no IS
-            use_plain = jnp.isclose(sigma_b, 0.0)
+            # JAX boolean predicate for "no IS" path (σ≈0)
+            use_plain = jnp.all(jnp.isclose(sigma_b, 0.0))
 
-            # Pack common things for both branches
-            operand = (rewards, log, model_params, policy_params, policy_hyperparams, sigma_b, sigma_t, B, T)
+            # Pack operands for cond (avoid closing over tracers)
+            operand = (rewards, log, model_params, policy_params, policy_hyperparams, sigma_b)
 
-            # Plain: no IS
             def _no_is_case(op):
-                rewards, log, model_params, *_ = op
+                rewards, log, model_params, policy_params, policy_hyperparams, sigma_b = op
                 returns = _jax_wrapped_returns(rewards)
-                u = utility_fn(returns, **utility_kwargs)
-                return -u, (log, model_params)
+                utility_val = utility_fn(returns, **utility_kwargs)
+                return -utility_val, (log, model_params)
 
-            # IS with **clipped Gaussian** likelihoods
             def _is_case(op):
-                rewards, log, model_params, policy_params, policy_hyperparams, sigma_b, sigma_t, B, T = op
-                eps = jnp.asarray(1e-8, dtype=self.compiled.REAL)
-                sigma_b = jnp.maximum(sigma_b, eps)
-                sigma_t = jnp.maximum(sigma_t, eps)
+                rewards, log, model_params, policy_params, policy_hyperparams, sigma_b = op
 
-                actions_over_time = log['action']  # {name: [B, T, ...]}  (post-clip)
+                # Target std falls back to behavior std if not provided
+                sigma_t = jnp.asarray(
+                    policy_hyperparams.get('target_std', policy_hyperparams.get('exploration_std', 0.0)),
+                    dtype=self.compiled.REAL
+                )
+
+                # Numerical safety (scalar sigma)
+                eps = jnp.asarray(1e-8, dtype=self.compiled.REAL)
+                sigma_b_ = jnp.maximum(sigma_b, eps)
+                sigma_t_ = jnp.maximum(sigma_t, eps)
+
+                actions_over_time = log['action']  # {name: [B, T, ...]} (post-noise, post-clip)
                 fluents_over_time = log['fluents']  # {state: [B, T, ...]}
 
-                # select per-time slices
-                def select_t(dbt, t):
+                # slice helpers: dict -> dict at time t
+                def _select_t(dbt, t):
                     return {k: v[:, t, ...] for (k, v) in dbt.items()}
 
-                bounds = self.plan.bounds  # {name: (lo, hi)}
-
-                # compute per-step ratios ρ_t for each batch element
-                def ratio_at_t(t):
-                    subs_bt = select_t(fluents_over_time, t)  # {state: [B, ...]}
-                    act_bt = select_t(actions_over_time, t)  # {name:  [B, ...]}
+                # ρ_t(b) = p_tgt(a_t|s_t) / p_beh(a_t|s_t), using clipped-Gaussian llk
+                def _ratio_at_t(t):
+                    subs_bt = _select_t(fluents_over_time, t)
+                    act_bt = _select_t(actions_over_time, t)
 
                     def per_batch(b):
                         subs_tb = {k: v[b] for (k, v) in subs_bt.items()}
                         mu_dict = _mean_actions_for_step(subs_tb, policy_params, policy_hyperparams)
 
-                        a_vec, mu_vec, lo_vec, hi_vec = _flatten_action_and_mu_dict(
-                            {k: v[b] for (k, v) in act_bt.items()}, mu_dict, bounds
+                        a_vec, mu_vec, lo_vec, hi_vec = _flatten_action_and_mu_with_bounds(
+                            {k: v[b] for (k, v) in act_bt.items()}, mu_dict
                         )
 
-                        # log-likelihood under clipped Gaussian (elementwise then sum)
-                        logp_tgt = jnp.sum(_log_clipped_gaussian_per_elem(a_vec, mu_vec, sigma_t, lo_vec, hi_vec))
-                        logp_beh = jnp.sum(_log_clipped_gaussian_per_elem(a_vec, mu_vec, sigma_b, lo_vec, hi_vec))
+                        # elementwise then sum
+                        logp_tgt = jnp.sum(_log_clipped_gaussian_elem(a_vec, mu_vec, sigma_t_, lo_vec, hi_vec))
+                        logp_beh = jnp.sum(_log_clipped_gaussian_elem(a_vec, mu_vec, sigma_b_, lo_vec, hi_vec))
                         return jnp.exp(logp_tgt - logp_beh)
 
                     return jax.vmap(per_batch)(jnp.arange(B))  # [B]
 
-                rho_bt = jax.vmap(ratio_at_t)(jnp.arange(T))  # [T, B]
+                rho_bt = jax.vmap(_ratio_at_t)(jnp.arange(T))  # [T, B]
                 rho_bt = jnp.transpose(rho_bt, (1, 0))  # [B, T]
 
-                # per-decision IS weights (you may clip for variance control if desired)
-                w_bt = jnp.cumprod(rho_bt, axis=1)
+                # per-decision IS weights
+                w_bt = jnp.cumprod(rho_bt, axis=1)  # [B, T]
 
                 rewards_weighted = rewards * w_bt
                 returns = _jax_wrapped_returns(rewards_weighted)
-                u = utility_fn(returns, **utility_kwargs)
-                return -u, (log, model_params)
+                utility_val = utility_fn(returns, **utility_kwargs)
+                return -utility_val, (log, model_params)
 
+            # If σ≈0, skip IS; otherwise compute IS. (This is a JAX cond, safe under jit.)
             loss, aux = jax.lax.cond(use_plain, _no_is_case, _is_case, operand)
             return loss, aux
 
