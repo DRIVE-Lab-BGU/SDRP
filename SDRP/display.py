@@ -17,16 +17,17 @@ header = ['epoch', 'eval_reward', 'eval_std']
 # file_names = ['HVAC_instance5_noise0_100.csv', 'HVAC_instance5_noise3_100.csv']
 # file_names = ['UAV_instance2_noise0_100.csv', 'UAV_instance2_noise3_100.csv']
 
-# file_names = ['HVAC_instance1_noise0.csv', 'HVAC_instance1_noise1.csv']#, 'HVAC_instance1_noise3.csv']
+file_names = ['HVAC_instance1_noise0.csv', 'HVAC_instance1_noise1.csv', 'HVAC_instance1_noise0_IS.csv','HVAC_instance1_noise3.csv', 'HVAC_instance1_noise3_IS.csv']#, 'HVAC_instance1_noise3.csv']
+legend = ['no noise', 'noise1', 'noise1_IS', 'noise3', 'noise3_IS']
 # file_names = ['reservoir_instance3_noise0_1000.csv', 'reservoir_instance3_noise3_1000.csv']
 # file_names = ['reservoir_instance3_noise3_IS.csv', 'reservoir_instance3_noise5_IS.csv']
 # file_names = ['reservoir_instance3_noise3_IS.csv', 'reservoir_instance3_noise3_1000.csv']
 # file_names = ['reservoir_instance3_noise0_1000.csv', 'reservoir_instance3_noise3_1000.csv', 'reservoir_instance3_noise3_IS.csv', 'reservoir_instance3_noise5_IS.csv','reservoir_instance3_noise5_noIS.csv']
-file_names = ['reservoir_instance5_stochastic0_500.csv','reservoir_instance5_noise3.csv','reservoir_instance5_noise5.csv','reservoir_instance5_noise7.csv',
-              'reservoir_instance5_noise3_IS.csv','reservoir_instance5_noise5_IS.csv','reservoir_instance5_noise7_IS.csv']
-legend = ['no noise','noise3', 'noise5','noise7','noise3IS', 'noise5IS','noise7IS']
+# file_names = ['reservoir_instance5_stochastic0_500.csv','reservoir_instance5_noise3.csv','reservoir_instance5_noise5.csv','reservoir_instance5_noise7.csv',
+#               'reservoir_instance5_noise3_IS.csv','reservoir_instance5_noise5_IS.csv','reservoir_instance5_noise7_IS.csv']
+# legend = ['no noise','noise3', 'noise5','noise7','noise3IS', 'noise5IS','noise7IS']
 # legend = ['w/o exploration noise', 'noise=3, w/o IS', 'noise=3, w IS', 'noise=5, w IS', 'noise=5, w/o IS']
-title = "Multi-zone HVA Control Problem"
+title = "Multi-zone HVAC Control Problem"
 # legend = []
 base_path = os.path.dirname(os.path.abspath(__file__))
 
@@ -68,7 +69,7 @@ for fpath, label in zip(files, legend):
   # Sort by epoch
   data = sorted(zip(epochs, vals, stds), key=lambda x: x[0])
   epochs, vals, stds = zip(*data)
-  cutoff = 30
+  cutoff = 100
 
   # Plot line with blue squares
   line, = ax.plot(epochs[:cutoff], vals[:cutoff], marker="s", linestyle="-")
