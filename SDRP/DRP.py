@@ -1,11 +1,12 @@
-####
-import sys
-import os
-import csv
+# SDRP entrypoint: wire up system utilities and planning libs used throughout the script
+import sys  # Handle command-line arguments and interpreter-level configuration
+import os  # Resolve filesystem paths for instances, logs, and configs
+import csv  # Persist simulation results and diagnostics as CSV tables
 
-import pyRDDLGym
-from pyRDDLGym_jax.core import logic
-import matplotlib
+import pyRDDLGym  # Core RDDL interface for constructing simulator environments
+from pyRDDLGym_jax.core import logic  # JAX-accelerated logical utilities used by the planner
+import matplotlib  # Base plotting backend required before importing pyplot
+from pyRDDLGym.core import env  # Provides environment helpers for standard pyRDDLGym flows
 
 from pyRDDLGym_jax.core import (simulator,
                             model,
