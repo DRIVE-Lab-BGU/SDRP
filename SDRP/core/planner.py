@@ -2580,7 +2580,10 @@ class JaxBackpropPlanner:
         def _log_pdf_normal(x, mu, sigma):
             sigma = jnp.maximum(sigma, EPS_SIGMA)
             z = (x - mu) / sigma
-            return -0.5 * (jnp.log(jnp.asarray(2.0 * jnp.pi, dtype=REAL)) + 2.0 * jnp.log(sigma) + z * z)
+            return -0.5 * (
+                    jnp.log(jnp.asarray(2.0 * jnp.pi, dtype=REAL)) +
+                    2.0 * jnp.log(sigma) + z * z
+            )
 
         def _log1m_cdf(z):
             return stdnorm_logcdf(-z)
@@ -2621,18 +2624,28 @@ class JaxBackpropPlanner:
         def _jax_wrapped_plan_loss(key, policy_params, policy_hyperparams, subs, model_params):
             log, model_params = rollouts(key, policy_params, policy_hyperparams, subs, model_params)
             log = _ensure_action_dict_in_log(log)
-            rewards = log['reward']
+            rewards_raw = log['reward']  # [B, T]
 
+            # --- sanitize reward BEFORE any weighting/discounting ---
+            rewards = jnp.nan_to_num(rewards_raw, nan=0.0, posinf=0.0, neginf=0.0)
+
+            jax.debug.print("[DBG env] reward any_nan={n}, any_inf={i}, mean={m}",
+                            n=jnp.any(jnp.isnan(rewards_raw)),
+                            i=jnp.any(jnp.isinf(rewards_raw)),
+                            m=jnp.nanmean(rewards_raw))
+
+            # If the log doesn't contain actions/fluents, revert to plain objective
             if ('action' not in log) or ('fluents' not in log):
-                returns = _jax_wrapped_returns(rewards)
+                returns = _jax_wrapped_returns(rewards)  # uses sanitized rewards
                 utility_val = utility_fn(returns, **utility_kwargs)
                 return -utility_val, (log, model_params)
 
             B, T = rewards.shape
             sigma_b = jnp.asarray(policy_hyperparams.get('exploration_std', 0.0), dtype=REAL)
-            sigma_t = jnp.asarray(policy_hyperparams.get('target_std', policy_hyperparams.get('exploration_std', 0.0)),
-                                  dtype=REAL)
+            sigma_t = jnp.asarray(policy_hyperparams.get('target_std',
+                                                         policy_hyperparams.get('exploration_std', 0.0)), dtype=REAL)
             use_plain = jnp.all(jnp.isclose(sigma_b, 0.0))
+
             operand = (rewards, log, model_params, policy_params, policy_hyperparams, sigma_b, sigma_t)
 
             def _no_is_case(op):
@@ -2646,8 +2659,9 @@ class JaxBackpropPlanner:
                 rewards, log, model_params, policy_params, policy_hyperparams, sigma_b, sigma_t = op
                 sigma_b_ = jnp.maximum(sigma_b, EPS_SIGMA)
                 sigma_t_ = jnp.maximum(sigma_t, EPS_SIGMA)
-                actions_over_time = log['action']
-                fluents_over_time = log['fluents']
+
+                actions_over_time = log['action']  # {name: [B, T, ...]}
+                fluents_over_time = log['fluents']  # {state: [B, T, ...]}
 
                 def _select_t(dbt, t):
                     return {k: v[:, t, ...] for (k, v) in dbt.items()}
@@ -2671,30 +2685,22 @@ class JaxBackpropPlanner:
 
                     return jax.vmap(per_batch)(jnp.arange(B))
 
-                log_rho_bt = jax.vmap(_log_ratio_at_t)(jnp.arange(T))
-                log_rho_bt = jnp.transpose(log_rho_bt, (1, 0))
+                log_rho_bt = jax.vmap(_log_ratio_at_t)(jnp.arange(T))  # [T, B]
+                log_rho_bt = jnp.transpose(log_rho_bt, (1, 0))  # [B, T]
 
-                # --- DEBUG checkpoint 1 ---
-                jax.debug.print(
-                    "[DBG rho] any_nan={n}, any_inf={i}, mean={m}",
-                    n=jnp.any(jnp.isnan(log_rho_bt)),
-                    i=jnp.any(jnp.isinf(log_rho_bt)),
-                    m=jnp.nanmean(log_rho_bt),
-                )
+                jax.debug.print("[DBG rho] any_nan={n}, any_inf={i}, mean={m}",
+                                n=jnp.any(jnp.isnan(log_rho_bt)),
+                                i=jnp.any(jnp.isinf(log_rho_bt)),
+                                m=jnp.nanmean(log_rho_bt))
 
                 log_w_bt = jnp.cumsum(log_rho_bt, axis=1)
                 log_w_bt = jnp.clip(log_w_bt, -LOGW_CLIP, LOGW_CLIP)
                 w_bt = jnp.exp(log_w_bt)
 
-                # --- DEBUG checkpoint 2 ---
-                jax.debug.print(
-                    "[DBG weights] any_nan={n}, any_inf={i}, min={mn}, max={mx}, mean={m}",
-                    n=jnp.any(jnp.isnan(w_bt)),
-                    i=jnp.any(jnp.isinf(w_bt)),
-                    mn=jnp.nanmin(w_bt),
-                    mx=jnp.nanmax(w_bt),
-                    m=jnp.nanmean(w_bt),
-                )
+                jax.debug.print("[DBG weights] any_nan={n}, any_inf={i}, min={mn}, max={mx}, mean={m}",
+                                n=jnp.any(jnp.isnan(w_bt)),
+                                i=jnp.any(jnp.isinf(w_bt)),
+                                mn=jnp.nanmin(w_bt), mx=jnp.nanmax(w_bt), m=jnp.nanmean(w_bt))
 
                 if USE_SELF_NORMALIZED:
                     sum_w = jnp.sum(w_bt, axis=1, keepdims=True)
@@ -2703,34 +2709,25 @@ class JaxBackpropPlanner:
 
                 rewards_weighted = rewards * w_bt
 
-                # --- DEBUG checkpoint 3 ---
-                jax.debug.print(
-                    "[DBG rewards] any_nan={n}, mean={m}",
-                    n=jnp.any(jnp.isnan(rewards_weighted)),
-                    m=jnp.nanmean(rewards_weighted),
-                )
+                jax.debug.print("[DBG rewards] any_nan={n}, mean={m}",
+                                n=jnp.any(jnp.isnan(rewards_weighted)),
+                                m=jnp.nanmean(rewards_weighted))
 
                 returns = _jax_wrapped_returns(rewards_weighted)
                 utility_val = utility_fn(returns, **utility_kwargs)
                 utility_val = jnp.nan_to_num(utility_val, nan=0.0, posinf=0.0, neginf=0.0)
 
-                # --- DEBUG checkpoint 4 ---
-                jax.debug.print(
-                    "[DBG utility] any_nan={n}, mean={m}",
-                    n=jnp.any(jnp.isnan(utility_val)),
-                    m=jnp.nanmean(utility_val),
-                )
+                jax.debug.print("[DBG utility] any_nan={n}, mean={m}",
+                                n=jnp.any(jnp.isnan(utility_val)),
+                                m=jnp.nanmean(utility_val))
 
                 return -utility_val, (log, model_params)
 
             loss, aux = jax.lax.cond(use_plain, _no_is_case, _is_case, operand)
 
-            # --- DEBUG checkpoint 5 ---
-            jax.debug.print(
-                "[DBG loss] any_nan={n}, mean={m}",
-                n=jnp.any(jnp.isnan(loss)),
-                m=jnp.nanmean(loss),
-            )
+            jax.debug.print("[DBG loss] any_nan={n}, mean={m}",
+                            n=jnp.any(jnp.isnan(loss)),
+                            m=jnp.nanmean(loss))
 
             return loss, aux
 
