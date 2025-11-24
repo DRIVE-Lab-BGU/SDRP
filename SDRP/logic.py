@@ -6,6 +6,29 @@ from typing import Any, Callable, Dict, Sequence, Tuple, Union
 import torch
 import torch.nn.functional as F
 
+########################################################
+### here in the sigment we define abstract decorators i convert evrey input x to tensor
+# to make sure that all operations are done in torch tensors
+# maybe it is not necessary 
+########################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# this helper creates a tensor of indices along a given axis, broadcast to the desired shape
+# e.g., shape=(2,3,4), axis=1 -> tensor([[[0,0,0,0],[1,1,1,1],[2,2,2,2]],
+#                                     [[0,0,0,0],[1,1,1,1],[2,2,2,2]]]) 
 
 def enumerate_literals(shape: Tuple[int, ...], axis: int, dtype: torch.dtype = torch.int32,
                       device=None) -> torch.Tensor:
@@ -17,7 +40,8 @@ def enumerate_literals(shape: Tuple[int, ...], axis: int, dtype: torch.dtype = t
     literals = literals.view(*view_shape)  # reshape for broadcasting
     return literals.expand(*shape)
 
-
+# this helper reduces a tensor along multiple axes using the provided reduction function
+# e.g., torch.min, torch.max, torch.sum, for torch.prod
 def _reduce_dims(tensor: torch.Tensor, axes: Union[int, Sequence[int]],
                  reduce_fn: Callable[[torch.Tensor, int], torch.Tensor]) -> torch.Tensor:
     axes_tuple = tuple(axes) if isinstance(axes, (list, tuple)) else (axes,)
@@ -32,6 +56,13 @@ def _reduce_dims(tensor: torch.Tensor, axes: Union[int, Sequence[int]],
 # - abstract class
 # - sigmoid comparison
 # ===========================================================================
+# here we define Comparison abstract base class,
+#  its mean that we must implement its methods in subclasses
+# for example if we want to use greater_equal, greater, equal, sgn, argmax methods
+# we must implement them in the subclass
+
+# this class defines the interface for comparison operations and make shure that 
+# every comaring (in subclasses) will be consistent with this interface
 
 class Comparison(metaclass=ABCMeta):
     """Base class for approximate comparison operations."""
@@ -57,6 +88,7 @@ class Comparison(metaclass=ABCMeta):
         pass
 
 ### here we define SigmoidComparison class inheriting from Comparison
+# https://arxiv.org/abs/2110.05651
 class SigmoidComparison(Comparison):
     """Comparison operations approximated using sigmoid functions."""
 
@@ -71,6 +103,7 @@ class SigmoidComparison(Comparison):
             x_t = torch.as_tensor(x)
             y_t = torch.as_tensor(y, device=x_t.device, dtype=x_t.dtype)
             weight = torch.as_tensor(params[id_], dtype=x_t.dtype, device=x_t.device)
+            # take the value of the sigmoid at (x - y)*weight
             gre_eq = torch.sigmoid(weight * (x_t - y_t))
             return gre_eq, params
 
@@ -103,7 +136,10 @@ class SigmoidComparison(Comparison):
             return sgn, params
 
         return _torch_wrapped_calc_sgn_approx
-
+######################################################################################################
+## returen argmax function i dont get it##############################################################
+#######################################################################################################
+    # https://arxiv.org/abs/2110.05651
     def argmax(self, id, init_params):
         id_ = str(id)
         init_params[id_] = self.weight  # reuse weight to control softmax temperature
@@ -119,7 +155,7 @@ class SigmoidComparison(Comparison):
             return sample, params
 
         return _torch_wrapped_calc_argmax_approx
-
+    # string representation of the class
     def __str__(self) -> str:
         return f'Sigmoid comparison with weight {self.weight}'
 
