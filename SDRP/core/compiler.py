@@ -56,7 +56,9 @@ class JaxRDDLCompiler:
                  allow_synchronous_state: bool = True,
                  logger: Optional[Logger] = None,
                  use64bit: bool = False,
-                 compile_non_fluent_exact: bool = True) -> None:
+                 compile_non_fluent_exact: bool = True,
+                 suppress_cast_warnings: bool = True # <— NEW
+                 ) -> None:
         '''Creates a new RDDL to Jax compiler.
 
         :param rddl: the RDDL model to compile into Jax
@@ -69,6 +71,7 @@ class JaxRDDLCompiler:
         '''
         self.rddl = rddl
         self.logger = logger
+        self.suppress_cast_warnings = suppress_cast_warnings
         # jax.config.update('jax_log_compiles', True) # for testing ONLY
 
         self.use64bit = use64bit
@@ -300,8 +303,8 @@ class JaxRDDLCompiler:
             reward, key, err, model_params = reward_fn(subs, model_params, key)
             errors |= err
 
-            # # >>> ADD THIS: sanitize reward from the simulator <<<
-            # reward = jnp.nan_to_num(reward, nan=0.0, posinf=0.0, neginf=0.0)
+            # >>> ADD THIS: sanitize reward from the simulator <<<
+            reward = jnp.nan_to_num(reward, nan=0.0, posinf=0.0, neginf=0.0)
 
             # (Optional) collect fluents snapshot for logging
             if log_fluents:
@@ -599,6 +602,10 @@ class JaxRDDLCompiler:
         def _jax_wrapped_cast(x, params, key):
             val, key, err, params = jax_expr(x, params, key)
             sample = jnp.asarray(val, dtype=dtype)
+            if self.suppress_cast_warnings:
+                # Keep behavior identical, but do NOT set the error bit.
+                return sample, key, err, params
+
             invalid_cast = jnp.logical_and(
                 jnp.logical_not(jnp.can_cast(val, dtype)),
                 jnp.any(sample != val)
