@@ -300,8 +300,8 @@ class JaxRDDLCompiler:
             reward, key, err, model_params = reward_fn(subs, model_params, key)
             errors |= err
 
-            # >>> ADD THIS: sanitize reward from the simulator <<<
-            reward = jnp.nan_to_num(reward, nan=0.0, posinf=0.0, neginf=0.0)
+            # # >>> ADD THIS: sanitize reward from the simulator <<<
+            # reward = jnp.nan_to_num(reward, nan=0.0, posinf=0.0, neginf=0.0)
 
             # (Optional) collect fluents snapshot for logging
             if log_fluents:
