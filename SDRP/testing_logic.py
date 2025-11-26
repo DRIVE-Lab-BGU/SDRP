@@ -1,5 +1,5 @@
 import torch
-from SDRP.logic import FuzzyLogic, SigmoidComparison, SoftRounding, SoftControlFlow
+from logic import FuzzyLogic, SigmoidComparison, SoftRounding, SoftControlFlow
 
 logic = FuzzyLogic(
     comparison=SigmoidComparison(10000.0),

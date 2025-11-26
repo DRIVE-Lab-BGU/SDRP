@@ -2,11 +2,12 @@ import torch
 import jax
 import jax.numpy as jnp
 
-from pyRDDLGym_jax import FuzzyLogic as TorchLogic
-from SDRP.logic   import FuzzyLogic as JaxLogic
+from pyRDDLGym_jax.core.logic import FuzzyLogic as JaxLogic
+from logic import FuzzyLogic as TorchLogic
 
-from pyRDDLGym_jax import SigmoidComparison as TorchComp, SoftRounding as TorchRound, SoftControlFlow as TorchControl
-from SDRP.logic  import SigmoidComparison as JaxComp,  SoftRounding as JaxRound,  SoftControlFlow as JaxControl
+
+from pyRDDLGym_jax.core.logic import SigmoidComparison as JaxComp,  SoftRounding as JaxRound,  SoftControlFlow as JaxControl
+from logic  import SigmoidComparison as TorchComp, SoftRounding as TorchRound, SoftControlFlow as TorchControl
 
 
 # =============================================================================
