@@ -1,6 +1,7 @@
 """Torch port of pyRDDLGym_jax core logic utilities with soft relaxations."""
 
 from abc import ABCMeta, abstractmethod
+import random
 from typing import Any, Callable, Dict, Sequence, Tuple, Union
 
 import torch
@@ -15,8 +16,8 @@ import torch.nn.functional as F
 ## to do 
 # 1  understand the argmax of sigmoid comparison
 # understand  _get_generator in line 437
-## 
-
+## _torch_wrapped_calc_poisson_gumbel_softmax in line 477
+#  nee to go back SoftRandomSampling class and understand it better
 
 # to ask: how godel tnorm is different from product tnorm in practice?
 
@@ -475,7 +476,7 @@ class SoftRandomSampling(RandomSampling):
 
     def _poisson_gumbel_softmax(self, id, init_params, logic):
         argmax_approx = logic.argmax(id, init_params)
-
+        ##### here i need to understnad the poisson gumbel softmax
         def _torch_wrapped_calc_poisson_gumbel_softmax(key, rate, params):
             # gen is torch.Generator object for random number generation
             gen = self._get_generator(key)
@@ -497,7 +498,7 @@ class SoftRandomSampling(RandomSampling):
 
         def _torch_wrapped_calc_poisson_exponential(key, rate, params):
             gen = self._get_generator(key)
-            #
+
             rate_t = torch.as_tensor(rate, dtype=logic.REAL)
             shape = (self.poisson_bins,) + tuple(rate_t.shape)
             U = torch.rand(shape, generator=gen, device=rate_t.device, dtype=logic.REAL)
@@ -509,7 +510,7 @@ class SoftRandomSampling(RandomSampling):
             return sample, params
 
         return _torch_wrapped_calc_poisson_exponential
-
+    # normal approximation to Poisson: Poisson(rate) -> Normal(rate, rate)
     def _poisson_normal_approx(self, logic):
         def _torch_wrapped_calc_poisson_normal_approx(key, rate, params):
             gen = self._get_generator(key)
@@ -1272,7 +1273,17 @@ class FuzzyLogic(Logic):
         self.rounding = rounding  # relaxed rounding ops
         self.control = control  # relaxed control flow
         self.eps = eps  # underflow guard
-
+    '''Creates a new fuzzy logic in jorch.
+        
+        :param tnorm: fuzzy operator for logical AND
+        :param complement: fuzzy operator for logical NOT
+        :param comparison: fuzzy operator for comparisons (>, >=, <, ==, ~=, ...)
+        :param sampling: random sampling of non-reparameterizable distributions
+        :param rounding: rounding floating values to integers
+        :param control: if and switch control structures
+        :param eps: small positive float to mitigate underflow
+        :param use64bit: whether to perform arithmetic in 64 bit
+        '''
     def __str__(self) -> str:
         return (f'model relaxation:\n'
                 f'    tnorm        ={str(self.tnorm)}\n'
@@ -1492,3 +1503,130 @@ class FuzzyLogic(Logic):
 
     def negative_binomial(self, id, init_params):
         return self.sampling.negative_binomial(id, init_params, self)
+######################################################################################################3
+
+
+logic = FuzzyLogic(comparison=SigmoidComparison(10000.0),
+                   rounding=SoftRounding(10000.0),
+                   control=SoftControlFlow(10000.0))
+
+
+def _test_logical():
+    print('testing logical')
+    init_params = {}
+    _and = logic.logical_and(0, init_params)
+    _not = logic.logical_not(1, init_params)
+    _gre = logic.greater(2, init_params)
+    _or = logic.logical_or(3, init_params)
+    _if = logic.control_if(4, init_params)
+    print(init_params)
+
+    # https://towardsdatascience.com/emulating-logical-gates-with-a-neural-network-75c229ec4cc9
+    def test_logic(x1, x2, w):
+        q1, w = _gre(x1, 0, w)
+        q2, w = _gre(x2, 0, w)
+        q3, w = _and(q1, q2, w)
+        q4, w = _not(q1, w)
+        q5, w = _not(q2, w)
+        q6, w = _and(q4, q5, w)        
+        cond, w = _or(q3, q6, w)
+        pred, w = _if(cond, +1, -1, w)
+        return pred
+    
+    x1 = torch.tensor([1, 1, -1, -1, 0.1, 15, -0.5], dtype=torch.float)
+    x2 = torch.tensor([1, -1, 1, -1, 10, -30, 6], dtype=torch.float)
+    print(test_logic(x1, x2, init_params))    
+
+
+def _test_indexing():
+    print('testing indexing')
+    init_params = {}
+    _argmax = logic.argmax(0, init_params)
+    _argmin = logic.argmin(1, init_params)
+    print(init_params)
+
+    def argmaxmin(x, w):
+        amax, w = _argmax(x, 0, w)
+        amin, w = _argmin(x, 0, w)
+        return amax, amin
+        
+    values = torch.tensor([2., 3., 5., 4.9, 4., 1., -1., -2.])
+    amax, amin = argmaxmin(values, init_params)
+    print(amax)
+    print(amin)
+
+
+def _test_control():
+    print('testing control')
+    init_params = {}
+    _switch = logic.control_switch(0, init_params)
+    print(init_params)
+    
+    pred = torch.linspace(0, 2, 10)
+    case1 = torch.tensor([-10.] * 10)
+    case2 = torch.tensor([1.5] * 10)
+    case3 = torch.tensor([10.] * 10)
+    cases = torch.stack([case1, case2, case3])
+    switch, _ = _switch(pred, cases, init_params)
+    print(switch)
+
+
+def _test_random():
+    print('testing random')
+    key = torch.manual_seed(42)
+    init_params = {}
+    _bernoulli = logic.bernoulli(0, init_params)
+    _discrete = logic.discrete(1, init_params)
+    _geometric = logic.geometric(2, init_params)
+    print(init_params)
+    
+    def bern(n, w):
+        prob =torch.tensor([0.3] * n)
+        sample, _ = _bernoulli(key, prob, w)
+        return sample
+    
+    samples = bern(50000, init_params)
+    print(torch.mean(samples))
+    
+    def disc(n, w):
+        prob = torch.tensor([0.1, 0.4, 0.5])
+        prob = torch.tile(prob, (n, 1))
+        sample, _ = _discrete(key, prob, w)
+        return sample
+        
+    samples = disc(50000, init_params)
+    samples = torch.round(samples)
+    print([torch.mean((samples == i).to(torch.float)) for i in range(3)])
+    
+    def geom(n, w):
+        prob = torch.tensor([0.3] * n)
+        sample, _ = _geometric(key, prob, w)
+        return sample
+    
+    samples = geom(50000, init_params)
+    print(torch.mean(samples))
+    
+
+def _test_rounding():
+    print('testing rounding')
+    init_params = {}
+    _floor = logic.floor(0, init_params)
+    _ceil = logic.ceil(1, init_params)
+    _round = logic.round(2, init_params)
+    _mod = logic.mod(3, init_params)
+    print(init_params)
+    
+    x = torch.tensor([2.1, 0.6, 1.99, -2.01, -3.2, -0.1, -1.01, 23.01, -101.99, 200.01])
+    print(_floor(x, init_params)[0])
+    print(_ceil(x, init_params)[0])
+    print(_round(x, init_params)[0])
+    print(_mod(x, 2.0, init_params)[0])
+    
+
+if __name__ == '__main__':
+    _test_logical()
+    _test_indexing()
+    _test_control()
+    _test_random()
+    _test_rounding()
+    
