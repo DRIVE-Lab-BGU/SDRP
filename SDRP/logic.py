@@ -218,12 +218,6 @@ class SoftRounding(Rounding):
     def __str__(self) -> str:
         return f'SoftFloor and SoftRound with weight {self.weight}'
 
-########################## here#####################################
-
-
-
-
-#  here i add something new
 
 
 
@@ -264,6 +258,19 @@ class StandardComplement(Complement):
 # - Yager(p) tnorm
 # ===========================================================================
 
+
+
+
+
+
+########################## here#####################################
+
+
+
+
+#  here i add something new
+
+
 class TNorm(metaclass=ABCMeta):
     """Base class for fuzzy differentiable t-norms."""
 
@@ -292,6 +299,7 @@ class ProductTNorm(TNorm):
     def _torch_wrapped_calc_forall_approx(x, axis, params):
         # fold product across possibly multiple axes
         axes = tuple(axis) if isinstance(axis, (list, tuple)) else (axis,)
+        # adding an option for axis to be a list of axes - different from original
         result = x
         for ax in sorted(axes, reverse=True):
             result = torch.prod(result, dim=ax)
