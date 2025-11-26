@@ -14,8 +14,11 @@ import torch.nn.functional as F
 
 ## to do 
 # 1  understand the argmax of sigmoid comparison
-
+# understand  _get_generator in line 437
 ## 
+
+
+# to ask: how godel tnorm is different from product tnorm in practice?
 
 
 
@@ -263,13 +266,6 @@ class StandardComplement(Complement):
 
 
 
-########################## here#####################################
-
-
-
-
-#  here i add something new
-
 
 class TNorm(metaclass=ABCMeta):
     """Base class for fuzzy differentiable t-norms."""
@@ -312,6 +308,7 @@ class ProductTNorm(TNorm):
         return 'Product t-norm'
 
 
+
 class GodelTNorm(TNorm):
     """Godel t-norm given by the expression (x, y) -> min(x, y)."""
 
@@ -326,6 +323,7 @@ class GodelTNorm(TNorm):
     def _torch_wrapped_calc_forall_approx(x, axis, params):
         # apply min along each axis sequentially
         axes = tuple(axis) if isinstance(axis, (list, tuple)) else (axis,)
+       # adding an option for axis to be a list of axes - different from original
         result = x
         for ax in sorted(axes, reverse=True):
             result = torch.min(result, dim=ax).values
@@ -398,6 +396,12 @@ class YagerTNorm(TNorm):
     def __str__(self) -> str:
         return f'Yager({self.p}) t-norm'
 
+########################## here#####################################
+
+
+
+
+#  here i add something new
 
 # ===========================================================================
 # RANDOM SAMPLING
@@ -473,6 +477,7 @@ class SoftRandomSampling(RandomSampling):
         argmax_approx = logic.argmax(id, init_params)
 
         def _torch_wrapped_calc_poisson_gumbel_softmax(key, rate, params):
+            # gen is torch.Generator object for random number generation
             gen = self._get_generator(key)
             rate_t = torch.as_tensor(rate, dtype=logic.REAL)
             ks = torch.arange(self.poisson_bins, dtype=logic.REAL, device=rate_t.device)
@@ -492,6 +497,7 @@ class SoftRandomSampling(RandomSampling):
 
         def _torch_wrapped_calc_poisson_exponential(key, rate, params):
             gen = self._get_generator(key)
+            #
             rate_t = torch.as_tensor(rate, dtype=logic.REAL)
             shape = (self.poisson_bins,) + tuple(rate_t.shape)
             U = torch.rand(shape, generator=gen, device=rate_t.device, dtype=logic.REAL)
