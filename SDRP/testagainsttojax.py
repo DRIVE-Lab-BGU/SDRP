@@ -38,7 +38,9 @@ def to_jax(x):
     return jnp.asarray(x, dtype=jnp.float32)
 
 def compare_tensors(name, tx, jx, eps=1e-4):
-    diff = torch.max(torch.abs(tx - torch.tensor(jx)))
+    # jax.Array objects do not implement __len__, so convert through numpy first
+    j_torch = torch.as_tensor(jax.device_get(jx), dtype=tx.dtype).clone()
+    diff = torch.max(torch.abs(tx - j_torch))
     print(f"{name:20s} | max diff = {diff.item():.6f}")
     if diff > eps:
         print("❌ MISMATCH!")
@@ -229,7 +231,7 @@ def test_compare_random():
     t_s, _ = _ber_t(None, p_t, init_t)
     j_s, _ = _ber_j(key_j, p_j, init_j)
 
-    compare_tensors("BERN", t_s.float().mean(), torch.tensor(j_s.mean()))
+    compare_tensors("BERN", t_s.float().mean(), j_s.mean())
 
 
 # =============================================================================
