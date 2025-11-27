@@ -119,7 +119,8 @@ def test_compare_argmax_argmin():
 # =============================================================================
 # 3. FORALL / EXISTS
 # =============================================================================
-#################### here ###########
+
+
 def test_compare_quantifiers():
     print("\n=== COMPARE QUANTIFIERS ===")
     init_t = {}
@@ -218,17 +219,17 @@ def test_compare_random():
     init_j = {}
 
     # same seed
-    torch.manual_seed(42)
+    key_t= torch.manual_seed(42)
     key_j = jax.random.PRNGKey(42)
 
     # Bernoulli
     _ber_t = torch_logic.bernoulli(0, init_t)
     _ber_j = jax_logic.bernoulli(0, init_j)
 
-    p_t = to_torch([0.3] * 10000)
-    p_j = to_jax ([0.3] * 10000)
+    p_t = to_torch([0.3] * 1000000)
+    p_j = to_jax ([0.3] * 1000000)
 
-    t_s, _ = _ber_t(None, p_t, init_t)
+    t_s, _ = _ber_t(key_t, p_t, init_t)
     j_s, _ = _ber_j(key_j, p_j, init_j)
 
     compare_tensors("BERN", t_s.float().mean(), j_s.mean())
@@ -245,3 +246,4 @@ if __name__ == "__main__":
     test_compare_control_flow()
     test_compare_rounding()
     test_compare_random()
+## just why randomnnes not good ask ayal 
