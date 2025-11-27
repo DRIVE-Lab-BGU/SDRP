@@ -111,7 +111,7 @@ def test_compare_argmax_argmin():
 
     t_min, _ = t_argmin(x_t, 0, init_t)
     j_min, _ = j_argmin(x_j, 0, init_j)
-
+    print(t_max , j_max , t_min, j_min, "ddd")
     compare_tensors("ARGMAX", t_max, j_max)
     compare_tensors("ARGMIN", t_min, j_min)
 
@@ -119,7 +119,7 @@ def test_compare_argmax_argmin():
 # =============================================================================
 # 3. FORALL / EXISTS
 # =============================================================================
-
+#################### here ###########
 def test_compare_quantifiers():
     print("\n=== COMPARE QUANTIFIERS ===")
     init_t = {}
