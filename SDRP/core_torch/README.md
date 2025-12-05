@@ -37,3 +37,11 @@ simulator.jax -> JaxRDDLCompiler -> from pyRDDLGym_jax.core.logic import ExactLo
 # logic
 
 # model
+
+
+
+
+# important thing 
+when we are update the noise we want to get small noise if the gradient is good** 
+and big noise if thr gradient is 0 
+the adam update do something that maybe we want to to repeat the adam in leacuter 6 in deep ari talk about it
