@@ -29,7 +29,8 @@ Args = Dict[str, Union[np.ndarray, torch.Tensor, Value, float, int, bool]]
 # need to do 
  
 # understad if i need build the compiler
-# 
+# one mpre problem ' _to_numpy' function but after i build my model i dont need it
+
 
 def _tree_map(fn: Callable[[Any], Any], tree: Any) -> Any:
     """Apply `fn` recursively to values living inside nested containers."""
@@ -279,7 +280,9 @@ class TorchRDDLSimulator(RDDLSimulator):
 
         done = self.check_terminal_states()
         return obs, reward, done
-    # its co
+
+
+
     def _to_numpy(self, value: Any):
         if isinstance(value, torch.Tensor):
             data = value.detach()
