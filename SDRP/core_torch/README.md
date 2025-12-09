@@ -34,7 +34,37 @@ pyrddlgym.make -> backend: Type[RDDLSimulator]=RDDLSimulator that defines the lo
 simulator.jax -> JaxRDDLCompiler -> from pyRDDLGym_jax.core.logic import ExactLogic (using line 121)
 # Simulator 
 
+
+JaxBackpropPlanner get evn.modl and in its change by the logic 
+**planner_args go to the model  rddl by hyperparmaters (the config is there )
+
+cearte file pilicies that contain drp slp 
+
+class dqn(nn.Module):
+    def __init__(self):
+        super(dqn, self).__init__()
+        self.fc1 = nn.Linear(4, 128)
+        self.fc2 = nn.Linear(128, 2)
+
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
+
+make the drp modulary 
+lets create class sit in 
+
+toturail totch dqn
+
+
+
+
+
+
+
 # logic
+
+
 
 # model
 
