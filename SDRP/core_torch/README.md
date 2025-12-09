@@ -36,9 +36,13 @@ simulator.jax -> JaxRDDLCompiler -> from pyRDDLGym_jax.core.logic import ExactLo
 
 
 JaxBackpropPlanner get evn.modl and in its change by the logic 
-**planner_args go to the model  rddl by hyperparmaters (the config is there )
 
-cearte file pilicies that contain drp slp 
+
+**planner_args go to the model  rddl by hyperparmaters (the config is there )
+its mean no more config file back there the user need to write what he wnat 
+for example
+
+
 
 class dqn(nn.Module):
     def __init__(self):
@@ -51,10 +55,18 @@ class dqn(nn.Module):
         x = self.fc2(x)
         return x
 
-make the drp modulary 
-lets create class sit in 
 
-toturail totch dqn
+and then 
+
+policy_net = DQN(n_observations, n_actions).to(device)
+and train the policy 
+
+Reinforcement Learning (DQN) Tutorial
+https://docs.pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
+c
+
+earte file pilicies that contain drp slp 
+
 
 
 
