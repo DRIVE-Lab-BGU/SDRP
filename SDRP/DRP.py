@@ -1,12 +1,12 @@
-# SDRP entrypoint: wire up system utilities and planning libs used throughout the script
-import sys  # Handle command-line arguments and interpreter-level configuration
-import os  # Resolve filesystem paths for instances, logs, and configs
-import csv  # Persist simulation results and diagnostics as CSV tables
+####
+import sys
+import os
+import csv
 
-import pyRDDLGym  # Core RDDL interface for constructing simulator environments
-from pyRDDLGym_jax.core import logic  # JAX-accelerated logical utilities used by the planner
-import matplotlib  # Base plotting backend required before importing pyplot
-from pyRDDLGym.core import env  # Provides environment helpers for standard pyRDDLGym flows
+import pyRDDLGym
+from pyRDDLGym_jax.core import logic
+import matplotlib
+from pyRDDLGym.core import env
 
 from pyRDDLGym_jax.core import (simulator,
                             model,
@@ -52,6 +52,20 @@ pass_for_save = f"log_{instance[0:-5]}_sd = {sd_for_stoc}_problem:{problem}.csv"
 
 domain_file = os.path.join(base_path, "instances", problem, "domain.rddl")
 instance_file = os.path.join(base_path, "instances", problem, instance)
+
+
+class dqn(nn.Module):
+    def __init__(self):
+        super(dqn, self).__init__()
+        self.fc1 = nn.Linear(4, 128)
+        self.fc2 = nn.Linear(128, 2)
+
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
+    
+
 myEnv = pyRDDLGym.make(domain=domain_file,
                      instance=instance_file,
                      vectorized=True)
