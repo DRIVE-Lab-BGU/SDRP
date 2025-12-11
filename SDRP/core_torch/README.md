@@ -67,6 +67,52 @@ Useing model.py and make the environment to fuzzylogic useing the simulator.py a
 simulator.jax -> JaxRDDLCompiler -> from pyRDDLGym_jax.core.logic import ExactLogic (using line 121)
 ## **planner_args 
 _______
+# comiler 
+JaxPlan Compiler (Original)
+
+The JaxPlan project compiles RDDL models into symbolic JAX functions.
+Each RDDL expression (CPFs, reward, invariants, conditions) is converted into a JAX computation graph that can be:
+	•	optimized by XLA,
+	•	differentiated with JAX autograd,
+	•	executed in parallel and batched,
+	•	used for gradient-based planning and optimization.
+
+This approach produces very high-performance planning, but relies on static graph compilation and exact logical/arithmetical operators.
+
+Reference:
+Gimelfarb, Taitler, Sanner (ICAPS 2024): JaxPlan and GurobiPlan.
+
+⸻
+
+TorchRDDLCompiler (This Project)
+
+This repository implements a Torch-based compiler for RDDL expressions.
+The design parallels JaxPlan but is built around:
+	•	PyTorch, not JAX
+	•	Eager execution, not XLA compilation
+	•	Configurable logic (ExactLogic or FuzzyLogic), which can be chosen at the simulator level and   not only at the planner level
+
+The compiler translates the RDDL AST into a collection of pure PyTorch callables, enabling:
+	•	differentiable simulators with torch.autograd
+	•	full visibility into each step of the transition
+	•	continuous/fuzzy logical semantics when desired
+	•	integration with custom optimization or RL algorithms
+	•	compatibility with Torch-based planning pipelines
+
+This makes the Torch compiler ideal for:
+	•	fuzzy / soft logic modeling
+	•	differentiable optimization of actions
+	•	reinforcement learning research
+	•	hybrid symbolic–gradient planning
+
+⸻
+
+Key Differences
+	•	JaxPlan focuses on speed and static compilation.
+	•	TorchRDDLCompiler focuses on flexibility, differentiability, and interpretability.
+	•	JaxPlan defaults to ExactLogic; Torch allows ExactLogic or FuzzyLogic interchangeably.
+	•	JaxPlan hides execution inside compiled XLA graphs; Torch executes line-by-line in Python.
+	•	Torch allows richer custom operators and experimental logic not easily supported in JAX.
 
 # Simulator 
 
