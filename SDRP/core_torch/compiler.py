@@ -1,29 +1,4 @@
-"""Torch-native RDDL compiler producing differentiable PyTorch callables.
-mplemented a torch-native compiler (core_torch/compiler.py) that mirrors the Jax structure while producing eager,
- autograd-friendly PyTorch callables. TorchRDDLCompiler now:
-Builds torch tensors for initial values, dependency levels, and tracer metadata; 
-stores CPFs/reward/invariants/preconditions/terminations exactly like the Jax compiler
- so TorchRDDLSimulator can consume them.
-Recursively compiles constants, pvars (including sliced/broadcast cases),
- arithmetic/relational/logical/aggregation/function/control nodes, python-function calls,
-and selectable random variables (Uniform/Normal/Exponential/Bernoulli) 
-into functions returning (value, key, error_code, params).
-Supports optional fuzzy-logic backends by routing 
-arithmetic/logical/control ops through user-provided hooks; falls back to torch ops otherwise.
-Keeps everything in eager torch without .
-numpy() conversions, so gradients can flow through the compiled CPFs and reward.
-Limitations: transition compilation still raises NotImplementedError; 
-switch nodes require a usable default if a case is None;
- external python functions are evaluated eagerly 
- but we don’t replicate the full captured-variable broadcasting from the Jax version.
- Next steps could include expanding the random-variable set,
- adding full pyfunc broadcasting support, and implementing planner-ready transition compilation if needed.
-"""
-####################################################################
-# this file soports gradient computation using torch autograd ######
-####################################################################
-
-
+"""Torch-native RDDL compiler producing differentiable PyTorch callables."""
 
 from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -42,6 +17,7 @@ from pyRDDLGym.core.debug.exception import (
 )
 from pyRDDLGym.core.debug.logger import Logger
 
+from .logic import ExactLogic, FuzzyLogic
 
 Args = Dict[str, Any]
 CallableExpr = Callable[[Args, Dict[str, Any], Optional[torch.Generator]],
@@ -57,12 +33,18 @@ class TorchRDDLCompiler:
                  logger: Optional[Logger]=None,
                  python_functions: Optional[Dict[str, Callable]]=None,
                  use64bit: bool=False,
+                 logic: Optional[object]=None,
                  fuzzy_logic: Optional[object]=None,
                  **_) -> None:
         self.rddl = rddl
         self.logger = logger
         self.python_functions = python_functions or {}
-        self.fuzzy_logic = fuzzy_logic
+        backend = logic or fuzzy_logic
+        if backend is None:
+            backend = ExactLogic(use64bit=use64bit)
+        elif hasattr(backend, 'set_use64bit'):
+            backend.set_use64bit(use64bit)
+        self.logic = backend
         self.use64bit = use64bit
 
         self.INT = torch.int64 if use64bit else torch.int32
@@ -245,8 +227,9 @@ class TorchRDDLCompiler:
     # ------------------------------------------------------------------
 
     def _apply_unary(self, name: str, value: torch.Tensor):
-        if self.fuzzy_logic is not None and hasattr(self.fuzzy_logic, name):
-            return getattr(self.fuzzy_logic, name)(value)
+        if self.logic is not None and hasattr(self.logic, name):
+            op = getattr(self.logic, name)
+            return op(value) if callable(op) else op
         if name == 'neg':
             return -value
         if name == 'logical_not':
@@ -254,8 +237,9 @@ class TorchRDDLCompiler:
         raise ValueError(f'Unsupported unary op {name}.')
 
     def _apply_binary(self, name: str, lhs: torch.Tensor, rhs: torch.Tensor):
-        if self.fuzzy_logic is not None and hasattr(self.fuzzy_logic, name):
-            return getattr(self.fuzzy_logic, name)(lhs, rhs)
+        if self.logic is not None and hasattr(self.logic, name):
+            op = getattr(self.logic, name)
+            return op(lhs, rhs) if callable(op) else op
         if name == 'add':
             return torch.add(lhs, rhs)
         if name == 'sub':
@@ -287,13 +271,13 @@ class TorchRDDLCompiler:
     def _apply_control_if(self, pred: torch.Tensor,
                           then_value: torch.Tensor,
                           else_value: torch.Tensor):
-        if self.fuzzy_logic is not None and hasattr(self.fuzzy_logic, 'if_then_else'):
-            return self.fuzzy_logic.if_then_else(pred, then_value, else_value)
+        if self.logic is not None and hasattr(self.logic, 'if_then_else'):
+            return self.logic.if_then_else(pred, then_value, else_value)
         return torch.where(pred.to(dtype=self.REAL) > 0.5, then_value, else_value)
 
     def _apply_control_switch(self, pred: torch.Tensor, cases: torch.Tensor):
-        if self.fuzzy_logic is not None and hasattr(self.fuzzy_logic, 'switch'):
-            return self.fuzzy_logic.switch(pred, cases)
+        if self.logic is not None and hasattr(self.logic, 'switch'):
+            return self.logic.switch(pred, cases)
         pred_long = pred.to(dtype=torch.long).unsqueeze(0)
         reference = cases[:1]
         expanded_index = pred_long.expand_as(reference)
@@ -472,8 +456,8 @@ class TorchRDDLCompiler:
             f'Functional operator {op} is not supported.\n' + print_stack_trace(expr))
 
     def _apply_function_unary(self, op: str, value: torch.Tensor) -> torch.Tensor:
-        if self.fuzzy_logic is not None and hasattr(self.fuzzy_logic, op):
-            return getattr(self.fuzzy_logic, op)(value)
+        if self.logic is not None and hasattr(self.logic, op):
+            return getattr(self.logic, op)(value)
         funcs = {
             'abs': torch.abs,
             'exp': torch.exp,
@@ -499,8 +483,8 @@ class TorchRDDLCompiler:
 
     def _apply_function_binary(self, op: str, lhs: torch.Tensor,
                                rhs: torch.Tensor) -> torch.Tensor:
-        if self.fuzzy_logic is not None and hasattr(self.fuzzy_logic, op):
-            return getattr(self.fuzzy_logic, op)(lhs, rhs)
+        if self.logic is not None and hasattr(self.logic, op):
+            return getattr(self.logic, op)(lhs, rhs)
         funcs = {
             'min': torch.minimum,
             'max': torch.maximum,
