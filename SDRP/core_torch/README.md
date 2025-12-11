@@ -8,6 +8,7 @@ for this task we goona use a new package that base on PyRDDLGym_jax but with a f
 
 ## Train and evaluate Agent
 To to it lets deep into the code
+* this code take from the original repo pyRDDLGym_jax 
 ```
 import pyRDDLGym
 from pyRDDLGym_jax.core.planner import JaxBackpropPlanner, JaxOfflineController
@@ -15,23 +16,58 @@ from pyRDDLGym_jax.core.planner import JaxBackpropPlanner, JaxOfflineController
 * set up the environment (note the vectorized option must be True)
 env = pyRDDLGym.make("domain", "instance", vectorized=True)
 
+################ this line dont exists in the orginal code ##################
+* load the config 
+planner_args, _, train_args = load_config(config_file)
+############################################################################3
+
 * create the planning algorithm
 planner = JaxBackpropPlanner(rddl=env.model, **planner_args)
 controller = JaxOfflineController(planner, **train_args)
 
-* evaluate the planner
+* evaluate the planner ___
 controller.evaluate(env, episodes=1, verbose=True, render=True)
 env.close()
 ```
-# create envatrument 
-first we need to create the envrument of our problem.
-useing 2 files: instnace.rddl and domein.rddl.
-the package the this 2  flies using pyRDDLGym and create the env.
-this env is in numpy way.
-but pyrddlgym use boolien logic we want softlogic(defferential -  to backward gradient - update the weghit of the policy(deep))
-so we supper from pyrddlgym.simulator and create our simulatore that using soft logic to create the envarument.
-pyrddlgym.make -> backend: Type[RDDLSimulator]=RDDLSimulator that defines the logic
+# create the environment 
+first we need to create the envitonment of our problem. 
+useing 2 files: instnace.rddl & domein.rddl.
+the package using this 2  flies by pyRDDLGym.make and create the env.
+this envitronment is in numpy and also in normal logict (not the fuzzy logic) .
+* pyrddlgym.make -> backend: Type[RDDLSimulator]=RDDLSimulator that defines the logic
+
+Ater we load the config 
+###  config file (we wnat to change this process)
+This file containe information about:
+* model , optimizer , training 
+```
+[Model]
+logic='FuzzyLogic'
+comparison_kwargs={'weight': 20}
+rounding_kwargs={'weight': 20}
+control_kwargs={'weight': 20}
+
+[Optimizer]
+method='JaxStraightLinePlan'
+method_kwargs={}
+optimizer='rmsprop'
+optimizer_kwargs={'learning_rate': 0.001}
+
+[Training]
+key=42
+epochs=5000
+train_seconds=30
+```
+
+When we call  JaxBackpropPlanner we need to give him 2 object
+  1) rddl=env.model 
+  2) **planner_args
+## rddl=env.model
+Useing model.py and make the environment to fuzzylogic useing the simulator.py and the comailer.py
 simulator.jax -> JaxRDDLCompiler -> from pyRDDLGym_jax.core.logic import ExactLogic (using line 121)
+## **planner_args 
+_______
+
 # Simulator 
 
 

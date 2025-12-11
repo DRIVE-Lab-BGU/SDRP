@@ -102,7 +102,7 @@ class TorchRDDLSimulator(RDDLSimulator):
             python_functions=self.python_functions,
             **self.compiler_args
         )
-        compiled.compile(log_jax_expr=True, heading='SIMULATION MODEL')
+        compiled.compile(log_expr=True, log_jax_expr=False, heading='SIMULATION MODEL')
         ###
         self._compiled = compiled
         self.compiler_class = compiled.__class__
