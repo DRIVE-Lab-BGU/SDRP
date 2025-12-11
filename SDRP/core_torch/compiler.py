@@ -19,6 +19,11 @@ switch nodes require a usable default if a case is None;
  Next steps could include expanding the random-variable set,
  adding full pyfunc broadcasting support, and implementing planner-ready transition compilation if needed.
 """
+####################################################################
+# this file soports gradient computation using torch autograd ######
+####################################################################
+
+
 
 from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
