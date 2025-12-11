@@ -25,11 +25,6 @@ except Exception:  # pragma: no cover - compiler will be provided later
 Args = Dict[str, Union[np.ndarray, torch.Tensor, Value, float, int, bool]]
 
 
-#####################################################
-# need to do 
- 
-# understad if i need build the compiler
-# one mpre problem ' _to_numpy' function but after i build my model i dont need it
 
 
 def _tree_map(fn: Callable[[Any], Any], tree: Any) -> Any:
@@ -55,6 +50,7 @@ class TorchRDDLSimulator(RDDLSimulator):
                  keep_tensors: bool=False,
                  objects_as_strings: bool=True,
                  python_functions: Optional[Dict[str, Callable]]=None,
+                 logic: Optional[object]=None,
                  compiler_factory: Optional[Callable[..., Any]]=None,
                  **compiler_args) -> None:
     
@@ -70,6 +66,7 @@ class TorchRDDLSimulator(RDDLSimulator):
         self.key = generator
         self.raise_error = raise_error
         #####
+        self.logic = logic
         self.compiler_factory = compiler_factory or TorchRDDLCompiler
         self.compiler_class = None
         self._compiled = None
@@ -96,11 +93,14 @@ class TorchRDDLSimulator(RDDLSimulator):
                 'Provide a compiler_factory argument pointing to a torch compiler.')
 
         rddl = self.rddl
+        compiler_kwargs = dict(self.compiler_args)
+        if 'logic' not in compiler_kwargs and self.logic is not None:
+            compiler_kwargs['logic'] = self.logic
         compiled = self.compiler_factory(
             rddl,
             logger=self.logger,
             python_functions=self.python_functions,
-            **self.compiler_args
+            **compiler_kwargs
         )
         compiled.compile(log_expr=True, log_jax_expr=False, heading='SIMULATION MODEL')
         ###
