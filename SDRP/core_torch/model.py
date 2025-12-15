@@ -131,7 +131,6 @@ class TorchModelLearner:
                  compiler_factory: Optional[Callable[..., Any]]=None,
                  device: Optional[torch.device]=None) -> None:
         """Create a learner that fits non-fluent ranges with gradient descent.
-
         Args:
             rddl: Lifted RDDL description to mimic.
             param_ranges: Mapping of non-fluent name to `(lower, upper)` range.

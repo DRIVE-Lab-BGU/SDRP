@@ -20,6 +20,7 @@ from pyRDDLGym.core.debug.logger import Logger
 from .logic import ExactLogic, FuzzyLogic
 
 Args = Dict[str, Any]
+# explanation: Callable that takes (subs, params, key) and returns (value, key, error_code, params)
 CallableExpr = Callable[[Args, Dict[str, Any], Optional[torch.Generator]],
                         Tuple[torch.Tensor, Optional[torch.Generator], int, Dict[str, Any]]]
 
@@ -36,6 +37,21 @@ class TorchRDDLCompiler:
                  logic: Optional[object]=None,
                  fuzzy_logic: Optional[object]=None,
                  **_) -> None:
+        """Prepare a compiler that mirrors the pyRDDLGym expression DAG.
+
+        Args:
+            rddl: Lifted model describing the domain.
+            logger: Optional logger to capture compilation traces.
+            python_functions: Mapping of external python functions.
+            use64bit: Whether tensors should default to 64-bit precision.
+            logic: Optional logic backend overriding the default.
+            fuzzy_logic: Alternate logic backend (legacy API).
+            **_: Ignored keyword arguments for compatibility.
+
+        Example:
+            >>> compiler = TorchRDDLCompiler(rddl_model, use64bit=True)
+            >>> compiler.compile()
+        """
         self.rddl = rddl
         self.logger = logger
         self.python_functions = python_functions or {}
@@ -71,6 +87,17 @@ class TorchRDDLCompiler:
 
     def compile(self, log_expr: bool=False, log_jax_expr: bool=False,
                 heading: str='') -> None:
+        """Initialize tensors, analyze dependencies, and build callables.
+
+        Args:
+            log_expr: Whether to log symbolic expressions.
+            log_jax_expr: Kept for API parity (unused in torch backend).
+            heading: Heading passed to the logger when printing expressions.
+
+        Example:
+            >>> compiler.compile(log_expr=True, heading='SIM')
+            >>> compiler.cpfs['next_state']  # torch callable
+        """
         initializer = RDDLValueInitializer(self.rddl, logger=self.logger)
         init_values_np = initializer.initialize()
         self.init_values = self._tensorize_structure(init_values_np)
@@ -94,6 +121,7 @@ class TorchRDDLCompiler:
         self.reward = self._torch(self.rddl.reward, init_params)
 
     def compile_transition(self, *args, **kwargs):
+        """Stub kept for compatibility with the planner interface."""
         raise NotImplementedError(
             'Transition compilation for planning is not yet implemented.')
 
@@ -102,6 +130,20 @@ class TorchRDDLCompiler:
     # ------------------------------------------------------------------
 
     def _torch(self, expr, init_params, dtype=None) -> CallableExpr:
+        """Recursively dispatch expressions to specialized Torch builders.
+
+        Args:
+            expr: Parsed pyRDDLGym expression node.
+            init_params: Dict of compiler hyperparameters.
+            dtype: Optional override for the callable output dtype.
+
+        Returns:
+            CallableExpr: Torch-ready callable evaluating the expression.
+
+        Example:
+            >>> fn = compiler._torch(expr, {})
+            >>> value, key, err, params = fn(subs, {}, None)
+        """
         etype, _ = expr.etype
         if etype == 'constant':
             fn = self._torch_constant(expr)
@@ -139,6 +181,18 @@ class TorchRDDLCompiler:
     # ------------------------------------------------------------------
 
     def _torch_constant(self, expr) -> CallableExpr:
+        """Return a callable that always emits the cached constant value.
+
+        Args:
+            expr: Constant expression node.
+
+        Returns:
+            CallableExpr: Callable ignoring substitutions and yielding tensor.
+
+        Example:
+            >>> fn = compiler._torch_constant(expr)
+            >>> tensor, _, _, _ = fn({}, {}, None)
+        """
         cached_value = self.traced.cached_sim_info(expr)
         tensor = self._ensure_tensor(cached_value)
 
@@ -148,6 +202,19 @@ class TorchRDDLCompiler:
         return _fn
 
     def _torch_pvar(self, expr, init_params) -> CallableExpr:
+        """Compile state/action parameterized variables, honoring slices.
+
+        Args:
+            expr: Parameterized variable expression.
+            init_params: Compilation hyperparameters.
+
+        Returns:
+            CallableExpr: Callable retrieving the right slice/value.
+
+        Example:
+            >>> fn = compiler._torch_pvar(expr, {})
+            >>> value, _, _, _ = fn(subs, {}, None)
+        """
         var, pvars = expr.args
         is_value, cached_info = self.traced.cached_sim_info(expr)
 
@@ -212,6 +279,19 @@ class TorchRDDLCompiler:
         return _non_nested
 
     def _torch_slice(self, slice_value):
+        """Wrap literal slices into callables returning tensors/indices.
+
+        Args:
+            slice_value: Slice, Ellipsis, None, or tensor-literal index.
+
+        Returns:
+            CallableExpr: Callable ignoring inputs and returning the slice.
+
+        Example:
+            >>> slice_fn = compiler._torch_slice(slice(0, 2))
+            >>> slice_fn({}, {}, None)[0]
+            slice(0, 2, None)
+        """
         if isinstance(slice_value, (slice, type(Ellipsis), type(None))):
             stored = slice_value
         else:
@@ -227,6 +307,19 @@ class TorchRDDLCompiler:
     # ------------------------------------------------------------------
 
     def _apply_unary(self, name: str, value: torch.Tensor):
+        """Apply unary ops using logic backend or fallback torch ops.
+
+        Args:
+            name: Identifier of the unary operation.
+            value: Input tensor.
+
+        Returns:
+            torch.Tensor: Result after applying the operator.
+
+        Example:
+            >>> compiler._apply_unary('neg', torch.tensor(1.))
+            tensor(-1.)
+        """
         if self.logic is not None and hasattr(self.logic, name):
             op = getattr(self.logic, name)
             return op(value) if callable(op) else op
@@ -237,6 +330,20 @@ class TorchRDDLCompiler:
         raise ValueError(f'Unsupported unary op {name}.')
 
     def _apply_binary(self, name: str, lhs: torch.Tensor, rhs: torch.Tensor):
+        """Apply binary operations with optional logic backend overrides.
+
+        Args:
+            name: Operation identifier.
+            lhs: Left-hand tensor.
+            rhs: Right-hand tensor.
+
+        Returns:
+            torch.Tensor: Result tensor.
+
+        Example:
+            >>> compiler._apply_binary('add', torch.tensor(1.), torch.tensor(2.))
+            tensor(3.)
+        """
         if self.logic is not None and hasattr(self.logic, name):
             op = getattr(self.logic, name)
             return op(lhs, rhs) if callable(op) else op
@@ -271,11 +378,39 @@ class TorchRDDLCompiler:
     def _apply_control_if(self, pred: torch.Tensor,
                           then_value: torch.Tensor,
                           else_value: torch.Tensor):
+        """Evaluate an `if` control expression using backend logic if available.
+
+        Args:
+            pred: Predicate tensor.
+            then_value: Tensor when predicate evaluates to true.
+            else_value: Tensor when predicate evaluates to false.
+
+        Returns:
+            torch.Tensor: Branch result.
+
+        Example:
+            >>> pred = torch.tensor(True)
+            >>> compiler._apply_control_if(pred, torch.tensor(1.), torch.tensor(0.))
+            tensor(1.)
+        """
         if self.logic is not None and hasattr(self.logic, 'if_then_else'):
             return self.logic.if_then_else(pred, then_value, else_value)
         return torch.where(pred.to(dtype=self.REAL) > 0.5, then_value, else_value)
 
     def _apply_control_switch(self, pred: torch.Tensor, cases: torch.Tensor):
+        """Select a case tensor according to the predicate index.
+
+        Args:
+            pred: Tensor encoding the case index.
+            cases: Tensor stack of possible values.
+
+        Returns:
+            torch.Tensor: Selected case tensor.
+
+        Example:
+            >>> compiler._apply_control_switch(torch.tensor(1), torch.tensor([[0.], [2.]]))
+            tensor(2.)
+        """
         if self.logic is not None and hasattr(self.logic, 'switch'):
             return self.logic.switch(pred, cases)
         pred_long = pred.to(dtype=torch.long).unsqueeze(0)
@@ -285,6 +420,20 @@ class TorchRDDLCompiler:
         return gathered.squeeze(0)
 
     def _aggregate(self, op: str, tensor: torch.Tensor, axes: Optional[Sequence[int]]):
+        """Run reduction ops (sum/forall/exists) across specified axes.
+
+        Args:
+            op: Aggregation name.
+            tensor: Input tensor.
+            axes: Axes to reduce, or `None` for all.
+
+        Returns:
+            torch.Tensor: Reduced tensor.
+
+        Example:
+            >>> compiler._aggregate('sum', torch.ones(2, 3), axes=(0,))
+            tensor([2., 2., 2.])
+        """
         if axes is None:
             axes = tuple(range(tensor.dim()))
         axes = tuple(axes) if isinstance(axes, (list, tuple)) else (axes,)
@@ -305,6 +454,19 @@ class TorchRDDLCompiler:
     # ------------------------------------------------------------------
 
     def _torch_arithmetic(self, expr, init_params) -> CallableExpr:
+        """Compile arithmetic expressions into torch callables.
+
+        Args:
+            expr: Arithmetic AST node.
+            init_params: Compilation parameters.
+
+        Returns:
+            CallableExpr: Callable executing +,-,*,/ chains.
+
+        Example:
+            >>> fn = compiler._torch_arithmetic(expr, {})
+            >>> value, key, err, params = fn(subs, {}, None)
+        """
         _, op = expr.etype
         args = [self._torch(arg, init_params) for arg in expr.args]
 
@@ -341,6 +503,19 @@ class TorchRDDLCompiler:
         return _fn
 
     def _torch_relational(self, expr, init_params) -> CallableExpr:
+        """Compile <, <=, ==, etc. comparisons.
+
+        Args:
+            expr: Relational AST node.
+            init_params: Compilation parameters.
+
+        Returns:
+            CallableExpr: Callable returning boolean tensors.
+
+        Example:
+            >>> fn = compiler._torch_relational(expr, {})
+            >>> fn(subs, {}, None)
+        """
         _, op = expr.etype
         lhs, rhs = expr.args
         lhs_fn = self._torch(lhs, init_params)
@@ -370,6 +545,19 @@ class TorchRDDLCompiler:
         return _fn
 
     def _torch_logical(self, expr, init_params) -> CallableExpr:
+        """Compile logical operators (~, &, |, ^).
+
+        Args:
+            expr: Boolean AST node.
+            init_params: Compilation parameters.
+
+        Returns:
+            CallableExpr: Callable producing boolean tensors.
+
+        Example:
+            >>> fn = compiler._torch_logical(expr, {})
+            >>> fn(subs, {}, None)
+        """
         _, op = expr.etype
         args = [self._torch(arg, init_params) for arg in expr.args]
 
@@ -408,6 +596,19 @@ class TorchRDDLCompiler:
     # ------------------------------------------------------------------
 
     def _torch_aggregation(self, expr, init_params) -> CallableExpr:
+        """Compile forall/exists/sum aggregations.
+
+        Args:
+            expr: Aggregation AST node.
+            init_params: Compilation parameters.
+
+        Returns:
+            CallableExpr: Callable reducing tensors along axes.
+
+        Example:
+            >>> fn = compiler._torch_aggregation(expr, {})
+            >>> fn(subs, {}, None)
+        """
         _, op = expr.etype
         *_, arg = expr.args
         _, axes = self.traced.cached_sim_info(expr)
@@ -429,6 +630,19 @@ class TorchRDDLCompiler:
         return _fn
 
     def _torch_functional(self, expr, init_params) -> CallableExpr:
+        """Compile unary/binary function calls like sin, pow, min, etc.
+
+        Args:
+            expr: Functional AST node.
+            init_params: Compilation parameters.
+
+        Returns:
+            CallableExpr: Callable dispatching to torch math.
+
+        Example:
+            >>> fn = compiler._torch_functional(expr, {})
+            >>> fn(subs, {}, None)
+        """
         _, op = expr.etype
         if len(expr.args) == 1:
             arg_fn = self._torch(expr.args[0], init_params)
@@ -456,6 +670,19 @@ class TorchRDDLCompiler:
             f'Functional operator {op} is not supported.\n' + print_stack_trace(expr))
 
     def _apply_function_unary(self, op: str, value: torch.Tensor) -> torch.Tensor:
+        """Apply unary math ops with logic overrides when available.
+
+        Args:
+            op: Name of unary function (e.g., `sin`, `abs`).
+            value: Input tensor.
+
+        Returns:
+            torch.Tensor: Result after applying the unary function.
+
+        Example:
+            >>> compiler._apply_function_unary('sqrt', torch.tensor(4.))
+            tensor(2.)
+        """
         if self.logic is not None and hasattr(self.logic, op):
             return getattr(self.logic, op)(value)
         funcs = {
@@ -483,6 +710,20 @@ class TorchRDDLCompiler:
 
     def _apply_function_binary(self, op: str, lhs: torch.Tensor,
                                rhs: torch.Tensor) -> torch.Tensor:
+        """Apply binary math ops with logic overrides when available.
+
+        Args:
+            op: Name of binary function (e.g., `min`, `pow`).
+            lhs: Left operand.
+            rhs: Right operand.
+
+        Returns:
+            torch.Tensor: Result tensor.
+
+        Example:
+            >>> compiler._apply_function_binary('min', torch.tensor(1.), torch.tensor(2.))
+            tensor(1.)
+        """
         if self.logic is not None and hasattr(self.logic, op):
             return getattr(self.logic, op)(lhs, rhs)
         funcs = {
@@ -503,6 +744,19 @@ class TorchRDDLCompiler:
     # ------------------------------------------------------------------
 
     def _torch_pyfunc(self, expr, init_params) -> CallableExpr:
+        """Compile external python function calls used inside RDDL.
+
+        Args:
+            expr: pyfunc AST node.
+            init_params: Compilation parameters.
+
+        Returns:
+            CallableExpr: Callable invoking the python function and tensorizing outputs.
+
+        Example:
+            >>> fn = compiler._torch_pyfunc(expr, {})
+            >>> fn(subs, {}, None)
+        """
         _, pyfunc_name = expr.etype
         pyfunc = self.python_functions.get(pyfunc_name)
         if pyfunc is None:
@@ -529,6 +783,19 @@ class TorchRDDLCompiler:
     # ------------------------------------------------------------------
 
     def _torch_control(self, expr, init_params) -> CallableExpr:
+        """Compile control structures (`if`, `switch`).
+
+        Args:
+            expr: Control AST node.
+            init_params: Compilation parameters.
+
+        Returns:
+            CallableExpr: Callable evaluating the control flow.
+
+        Example:
+            >>> fn = compiler._torch_control(expr, {})
+            >>> fn(subs, {}, None)
+        """
         _, op = expr.etype
         if op == 'if':
             pred, then_expr, else_expr = expr.args
@@ -586,6 +853,19 @@ class TorchRDDLCompiler:
     # ------------------------------------------------------------------
 
     def _torch_random(self, expr, init_params) -> CallableExpr:
+        """Compile sampling primitives so they emit deterministic tensors.
+
+        Args:
+            expr: Random variable AST node.
+            init_params: Compilation parameters.
+
+        Returns:
+            CallableExpr: Callable that samples using torch RNGs.
+
+        Example:
+            >>> fn = compiler._torch_random(expr, {})
+            >>> sample, key, err, params = fn(subs, {}, torch.Generator())
+        """
         _, name = expr.etype
         args = [self._torch(arg, init_params) for arg in expr.args]
 
@@ -630,6 +910,18 @@ class TorchRDDLCompiler:
     # ------------------------------------------------------------------
 
     def _compile_cpfs(self, init_params) -> Dict[str, CallableExpr]:
+        """Topologically compile every CPF using the traced dependency order.
+
+        Args:
+            init_params: Compilation parameters shared across CPFs.
+
+        Returns:
+            Dict[str, CallableExpr]: CPF name to torch callable.
+
+        Example:
+            >>> cpfs = compiler._compile_cpfs({})
+            >>> list(cpfs.keys())
+        """
         cpfs: Dict[str, CallableExpr] = {}
         for cpfs_in_level in self.levels.values():
             for cpf in cpfs_in_level:
@@ -642,6 +934,18 @@ class TorchRDDLCompiler:
     # ------------------------------------------------------------------
 
     def _ensure_tensor(self, value: Any) -> torch.Tensor:
+        """Convert arbitrary python/numpy values into Torch tensors.
+
+        Args:
+            value: Python / numpy / torch input.
+
+        Returns:
+            torch.Tensor: Tensor using compiler precision defaults.
+
+        Example:
+            >>> compiler._ensure_tensor(1.0)
+            tensor(1.)
+        """
         if isinstance(value, torch.Tensor):
             return value.to(dtype=self.REAL if value.dtype.is_floating_point else value.dtype)
         if isinstance(value, np.ndarray):
@@ -667,6 +971,18 @@ class TorchRDDLCompiler:
         return torch.tensor(value)
 
     def _tensorize_structure(self, data: Any):
+        """Recursively map python containers into tensors of matching shape.
+
+        Args:
+            data: Arbitrary nested structure.
+
+        Returns:
+            Same structure with tensors replacing scalars/arrays.
+
+        Example:
+            >>> compiler._tensorize_structure({'a': [1, 2]})
+            {'a': tensor([1., 2.])}
+        """
         if isinstance(data, dict):
             return {k: self._tensorize_structure(v) for (k, v) in data.items()}
         if isinstance(data, list):
@@ -676,6 +992,20 @@ class TorchRDDLCompiler:
         return self._ensure_tensor(data)
 
     def _ensure_generator(self, key: Optional[torch.Generator], device: torch.device):
+        """Return an RNG, creating a seeded generator tied to the tensor device.
+
+        Args:
+            key: Optional existing generator.
+            device: Device hosting the tensors being sampled.
+
+        Returns:
+            torch.Generator: Torch RNG ready for sampling.
+
+        Example:
+            >>> gen = compiler._ensure_generator(None, torch.device('cpu'))
+            >>> isinstance(gen, torch.Generator)
+            True
+        """
         if key is not None:
             return key
         device_type = device.type if isinstance(device, torch.device) else 'cpu'
