@@ -30,12 +30,36 @@ LossFunction = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
 
 
 def mean_squared_error() -> LossFunction:
+    """Return a squared-error loss closure `loss(target, pred)`.
+
+    Returns:
+        LossFunction: Callable that expects `(target, prediction)` tensors and
+            outputs `(target - prediction)^2`.
+
+    Example:
+        >>> loss = mean_squared_error()
+        >>> loss(torch.tensor([1.0]), torch.tensor([0.5]))
+        tensor([0.2500])
+    """
     def _torch_mse(target, pred):
         return torch.square(target - pred)
     return _torch_mse
 
 
 def binary_cross_entropy(eps: float=1e-6) -> LossFunction:
+    """Return a numerically safe BCE closure `loss(target, pred)`.
+
+    Args:
+        eps (float): Small constant used to clamp predictions away from 0/1.
+
+    Returns:
+        LossFunction: Callable mapping `(target, prediction)` to BCE loss.
+
+    Example:
+        >>> loss = binary_cross_entropy()
+        >>> loss(torch.tensor([1.0]), torch.tensor([0.8]))
+        tensor([0.2231])
+    """
     def _torch_bce(target, pred):
         pred = torch.clamp(pred, eps, 1.0 - eps)
         log_pred = torch.log(pred)
@@ -45,6 +69,22 @@ def binary_cross_entropy(eps: float=1e-6) -> LossFunction:
 
 
 def optax_loss(loss_fn: Callable[..., torch.Tensor], **kwargs) -> LossFunction:
+    """Wrap an Optax-style loss to match the learner signature.
+
+    Args:
+        loss_fn: Callable taking predictions first and targets second.
+        **kwargs: Extra keyword arguments forwarded to `loss_fn`.
+
+    Returns:
+        LossFunction: Callable taking `(target, pred)` and forwarding to Optax.
+
+    Example:
+        >>> def l2(pred, target):
+        ...     return (pred - target) ** 2
+        >>> loss = optax_loss(l2)
+        >>> loss(torch.tensor([1.0]), torch.tensor([0.0]))
+        tensor([1.])
+    """
     def _wrapped_loss(target, pred):
         return loss_fn(pred, target, **kwargs)
     return _wrapped_loss
@@ -59,6 +99,15 @@ class TorchLearnerStatus(Enum):
     ITER_BUDGET_REACHED = 4
 
     def is_terminal(self) -> bool:
+        """Whether the optimization loop should stop for this status.
+
+        Returns:
+            bool: True once the learner reached an unrecoverable issue.
+
+        Example:
+            >>> TorchLearnerStatus.NO_PROGRESS.is_terminal()
+            False
+        """
         return self.value >= 2
 
 
@@ -81,6 +130,32 @@ class TorchModelLearner:
                  model_params_reduction: Callable[[Any], Any]=lambda x: x[0],
                  compiler_factory: Optional[Callable[..., Any]]=None,
                  device: Optional[torch.device]=None) -> None:
+        """Create a learner that fits non-fluent ranges with gradient descent.
+
+        Args:
+            rddl: Lifted RDDL description to mimic.
+            param_ranges: Mapping of non-fluent name to `(lower, upper)` range.
+            batch_size_train: Number of trajectories consumed per step.
+            samples_per_datapoint: How many stochastic rollouts per datapoint.
+            optimizer: Optimizer constructor such as `torch.optim.Adam`.
+            optimizer_kwargs: Extra keyword args forwarded to the optimizer.
+            initializer: Callable creating the initial tensor for each param.
+            wrap_non_bool: If True, wrap params to enforce bounds analytically.
+            use64bit: If True, prefer float64 tensors for precision.
+            bool_fluent_loss: Loss used for boolean state prediction error.
+            real_fluent_loss: Loss used for real-valued states.
+            int_fluent_loss: Loss used for discrete integer states.
+            logic: Logic backend injected into the compiler.
+            model_params_reduction: Aggregator for per-sample hyperparameters.
+            compiler_factory: Factory returning a Torch compiler with gradients.
+            device: Torch device for parameters and computations.
+
+        Example:
+            >>> learner = TorchModelLearner(rddl_model, {'nf': (0.0, 1.0)})
+            >>> callback = learner.optimize(data_stream)
+            >>> callback['status']
+            TorchLearnerStatus.NORMAL
+        """
         self.rddl = rddl
         self.param_ranges = param_ranges.copy()
         self.batch_size_train = batch_size_train
@@ -121,10 +196,32 @@ class TorchModelLearner:
     def _default_initializer(self, key: torch.Generator,
                              shape: Tuple[int, ...],
                              dtype: torch.dtype) -> torch.Tensor:
+        """Create a small Gaussian tensor for parameter initialization.
+
+        Args:
+            key: RNG used so each parameter receives a deterministic sample.
+            shape: Desired parameter shape.
+            dtype: Target dtype for the tensor.
+
+        Returns:
+            torch.Tensor: Random normal tensor matching the provided metadata.
+
+        Example:
+            >>> learner._default_initializer(torch.Generator(), (2,), torch.float32)
+            tensor([ 0.0012, -0.0078])
+        """
         tensor = torch.empty(shape, dtype=dtype, device=self.device)
         return torch.nn.init.normal_(tensor, mean=0.0, std=0.01, generator=key)
 
     def _validate_param_ranges(self):
+        """Ensure user supplied bounds are valid for every declared non-fluent.
+
+        Raises:
+            ValueError: If the name is unknown or bounds are malformed.
+
+        Example:
+            >>> learner._validate_param_ranges()  # no exception means ok
+        """
         for (name, values) in self.param_ranges.items():
             if name not in self.rddl.non_fluents:
                 raise ValueError(f'param_ranges key <{name}> is not a valid non-fluent.')
@@ -139,6 +236,16 @@ class TorchModelLearner:
                         f'param_ranges values with key <{name}> do not satisfy lower <= upper.')
 
     def _torch_compile_rddl(self):
+        """Compile the lifted RDDL to differentiable PyTorch callables.
+
+        Returns:
+            Callable: Step function accepting `(key, params, subs, actions, hyperparams)`
+            and returning stacked next-state predictions and hyperparameters.
+
+        Example:
+            >>> step_fn = learner._torch_compile_rddl()
+            >>> next_state, hyper = step_fn(key, params, subs, acts, hyper)
+        """
         if self.compiler_factory is None:
             raise ImportError('TorchRDDLCompilerWithGrad is required for TorchModelLearner.')
         self.compiled = self.compiler_factory(
@@ -191,6 +298,15 @@ class TorchModelLearner:
         return _torch_wrapped_parallel_step
 
     def _build_transition_function(self):
+        """Create a deterministic transition that mirrors CPF evaluation order.
+
+        Returns:
+            Callable: Function `(key, actions, subs, hyperparams)` -> `(next_subs, log, hyperparams)`.
+
+        Example:
+            >>> transition = learner._build_transition_function()
+            >>> next_subs, log, hyper = transition(key, actions, subs, {})
+        """
         compiled = self.compiled
         level_keys = sorted(compiled.levels.keys())
 
@@ -215,6 +331,15 @@ class TorchModelLearner:
         return _transition
 
     def _torch_map(self):
+        """Map trainable `nn.Parameter` tensors to bounded non-fluent values.
+
+        Returns:
+            Callable: Function `params -> param_fluents` suitable for the model.
+
+        Example:
+            >>> map_fn = learner._torch_map()
+            >>> param_fluents = map_fn({'nf': nn.Parameter(torch.zeros(1))})
+        """
         case_indices = {}
         processed_ranges = {}
         if self.wrap_non_bool:
@@ -269,6 +394,20 @@ class TorchModelLearner:
         return _torch_params_to_fluents
 
     def _torch_loss(self, map_fn, step_fn):
+        """Build the differentiable loss that compares predicted and target states.
+
+        Args:
+            map_fn: Callable returning bounded parameters.
+            step_fn: Callable returning next state predictions.
+
+        Returns:
+            Callable: Function `(key, params, subs, actions, next_fluents, hyperparams)`
+            -> `(loss, hyperparams)`.
+
+        Example:
+            >>> loss_fn = learner._torch_loss(learner.map_fn, learner.step_fn)
+            >>> loss, _ = loss_fn(key, params, subs, actions, targets, {})
+        """
         def _torch_wrapped_batched_model_loss(key, param_fluents, subs, actions,
                                               next_fluents, hyperparams):
             next_subs, hyperparams = step_fn(
@@ -297,6 +436,19 @@ class TorchModelLearner:
         return _torch_wrapped_batched_loss
 
     def _torch_init(self, project_fn):
+        """Create parameter initialization utilities for random or user guesses.
+
+        Args:
+            project_fn: Callable that enforces parameter constraints.
+
+        Returns:
+            Tuple[Callable, Callable]: `(init_fn, init_opt_fn)` where the first
+            samples fresh parameters and the second wraps user guesses.
+
+        Example:
+            >>> init_params, init_opt = learner._torch_init(lambda x: x)
+            >>> params, opt = init_params(torch.Generator())
+        """
         def _init_params_optimizer(key: torch.Generator):
             params = {}
             names = list(self.param_ranges.keys())
@@ -322,6 +474,18 @@ class TorchModelLearner:
         return _init_params_optimizer, _init_optimizer
 
     def _torch_update(self, loss_fn):
+        """Create an SGD update rule along with projection of constrained params.
+
+        Args:
+            loss_fn: Callable producing the loss for a mini-batch.
+
+        Returns:
+            Tuple[Callable, Callable]: `(update_fn, project_fn)` used in training.
+
+        Example:
+            >>> update_fn, project_fn = learner._torch_update(learner.loss_fn)
+            >>> params, opt, loss, zeros, hyper = update_fn(key, params, subs, acts, tgt, {}, opt)
+        """
         def _project_params(params: Dict[str, nn.Parameter]):
             if self.wrap_non_bool:
                 return params
@@ -359,6 +523,16 @@ class TorchModelLearner:
         return _torch_wrapped_params_update, _project_params
 
     def _batched_init_subs(self):
+        """Replicate initial state fluents across the training batch dimension.
+
+        Returns:
+            Dict[str, torch.Tensor]: Batched initial substitutions keyed by fluent.
+
+        Example:
+            >>> subs = learner._batched_init_subs()
+            >>> subs['state_fluent'].shape
+            torch.Size([learner.batch_size_train, ...])
+        """
         init_train = {}
         for (name, value) in self.compiled.init_values.items():
             tensor = self._ensure_tensor(value, dtype=self.real_dtype)
@@ -374,6 +548,16 @@ class TorchModelLearner:
     # ------------------------------------------------------------------
 
     def optimize(self, *args, **kwargs) -> Optional[Callback]:
+        """Run `optimize_generator` to completion and return the final callback.
+
+        Returns:
+            Optional[Callback]: Last yielded dictionary or `None` when empty.
+
+        Example:
+            >>> result = learner.optimize(data_stream, epochs=10)
+            >>> result['train_loss']
+            0.1234
+        """
         iterator = self.optimize_generator(*args, **kwargs)
         last = deque(iterator, maxlen=1)
         if last:
@@ -386,6 +570,23 @@ class TorchModelLearner:
                            train_seconds: float=120.,
                            guess: Optional[Params]=None,
                            print_progress: bool=True) -> Generator[Callback, None, None]:
+        """Stream optimization callbacks so callers can monitor training live.
+
+        Args:
+            data: Iterable of `(state, action, next_state)` batches.
+            key: Optional RNG overriding the learner seed.
+            epochs: Maximum number of iterations to process.
+            train_seconds: Wall-clock budget for optimization.
+            guess: Optional initial parameter values.
+            print_progress: Whether to render a tqdm progress bar.
+
+        Yields:
+            Callback: Dictionary with status, iteration, parameters, etc.
+
+        Example:
+            >>> for callback in learner.optimize_generator(data, epochs=5):
+            ...     print(callback['iteration'], callback['train_loss'])
+        """
         try:
             from tqdm import tqdm
         except Exception:  # pragma: no cover
@@ -454,6 +655,19 @@ class TorchModelLearner:
     def evaluate_loss(self, data: DataStream,
                       key: Optional[torch.Generator],
                       param_fluents: Params) -> float:
+        """Compute the average loss of learned parameters on provided data.
+
+        Args:
+            data: Iterable of `(state, action, next_state)` tuples.
+            key: Optional RNG to make rollouts deterministic.
+            param_fluents: Dictionary of mapped parameter tensors.
+
+        Returns:
+            float: Mean loss across the dataset.
+
+        Example:
+            >>> loss = learner.evaluate_loss(data, None, learner.map_fn(params))
+        """
         rng = key if key is not None else self.generator
         subs = self._batched_init_subs()
         hyperparams = self.compiled.model_params
@@ -482,6 +696,19 @@ class TorchModelLearner:
         return mean_loss
 
     def learned_model(self, param_fluents: Params) -> RDDLLiftedModel:
+        """Produce a Python RDDL model with non-fluents replaced by learned values.
+
+        Args:
+            param_fluents: Dictionary mapping non-fluent names to tensors.
+
+        Returns:
+            RDDLLiftedModel: Deep copy of the original with updated non-fluents.
+
+        Example:
+            >>> fitted = learner.learned_model(learner.map_fn(params))
+            >>> fitted.non_fluents['capacity']
+            3.2
+        """
         model = deepcopy(self.rddl)
         for (name, values) in param_fluents.items():
             tensor = torch.as_tensor(values)
@@ -503,9 +730,30 @@ class TorchModelLearner:
     # ------------------------------------------------------------------
 
     def seed(self, seed: int) -> None:
+        """Set the internal RNG seed so later training runs are reproducible.
+
+        Args:
+            seed (int): New seed value forwarded to the PyTorch generator.
+
+        Example:
+            >>> learner.seed(42)
+        """
         self.generator.manual_seed(seed)
 
     def _ensure_tensor(self, value: Any, dtype: Optional[torch.dtype]=None) -> torch.Tensor:
+        """Convert arbitrary data to a tensor on the learner device and dtype.
+
+        Args:
+            value: Python/NumPy/Torch input.
+            dtype: Optional dtype override.
+
+        Returns:
+            torch.Tensor: Tensor suitable for downstream computations.
+
+        Example:
+            >>> learner._ensure_tensor([1, 2]).device
+            device(type='cpu')
+        """
         if isinstance(value, torch.Tensor):
             tensor = value.to(self.device)
             if dtype is not None:
@@ -515,10 +763,36 @@ class TorchModelLearner:
         return tensor
 
     def _tensorize_structure(self, structure: Dict[str, Any]) -> Dict[str, torch.Tensor]:
+        """Convert a `{name: value}` mapping into tensors using `_ensure_tensor`.
+
+        Args:
+            structure: Dictionary keyed by fluent name.
+
+        Returns:
+            Dict[str, torch.Tensor]: Tensorized structure.
+
+        Example:
+            >>> learner._tensorize_structure({'f': 1.0})['f']
+            tensor(1.)
+        """
         return {name: self._ensure_tensor(value, dtype=self._var_dtype(name))
                 for (name, value) in structure.items()}
 
     def _split_generator(self, base: torch.Generator, num: int):
+        """Create `num` new generators by splitting the provided base RNG.
+
+        Args:
+            base: Generator to draw fresh seeds from.
+            num: Number of sub-generators requested.
+
+        Returns:
+            List[torch.Generator]: Deterministic generators.
+
+        Example:
+            >>> gens = learner._split_generator(torch.Generator(), 2)
+            >>> len(gens)
+            2
+        """
         seeds = torch.randint(
             0, 2**31 - 1, (num,), generator=base).tolist()
         result = []
@@ -529,17 +803,64 @@ class TorchModelLearner:
         return result
 
     def _split_once(self, base: torch.Generator):
+        """Convenience helper returning a single generator from `_split_generator`.
+
+        Args:
+            base: Generator to split.
+
+        Returns:
+            torch.Generator: Newly seeded generator.
+
+        Example:
+            >>> learner._split_once(torch.Generator())
+        """
         return self._split_generator(base, 1)[0]
 
     def _value_shape(self, value: Any):
+        """Return the tensor shape corresponding to the provided sample value.
+
+        Args:
+            value: Python/NumPy/Torch structure.
+
+        Returns:
+            Tuple[int, ...]: Shape tuple useful for parameter initialization.
+
+        Example:
+            >>> learner._value_shape(torch.zeros(2))
+            torch.Size([2])
+        """
         tensor = torch.as_tensor(value)
         return tensor.shape
 
     def _create_optimizer(self, params: Dict[str, nn.Parameter]):
+        """Instantiate the user-provided optimizer for the parameter list.
+
+        Args:
+            params: Dictionary of learnable tensors.
+
+        Returns:
+            Optimizer: Torch optimizer ready to step gradients.
+
+        Example:
+            >>> learner._create_optimizer({'nf': nn.Parameter(torch.zeros(1))})
+        """
         parameter_list = list(params.values())
         return self.optimizer_factory(parameter_list, **self.optimizer_kwargs)
 
     def _index_structure(self, structure: Dict[str, torch.Tensor], index: int):
+        """Take the `index`-th sample from every tensor in a batched structure.
+
+        Args:
+            structure: Dictionary where tensors share their leading batch dim.
+            index: Integer batch index to slice.
+
+        Returns:
+            Dict[str, torch.Tensor]: Structure representing a single sample.
+
+        Example:
+            >>> learner._index_structure({'x': torch.arange(6).view(3, 2)}, 1)
+            {'x': tensor([2, 3])}
+        """
         result = {}
         for (name, value) in structure.items():
             tensor = self._ensure_tensor(value)
@@ -550,6 +871,18 @@ class TorchModelLearner:
         return result
 
     def _stack_structure(self, samples: Any):
+        """Stack a list of samples (possibly nested dicts) along a new dimension.
+
+        Args:
+            samples: List of tensors or dictionaries of tensors.
+
+        Returns:
+            Union[torch.Tensor, Dict[str, torch.Tensor]]: Batched structure.
+
+        Example:
+            >>> learner._stack_structure([{'x': torch.tensor(1)}, {'x': torch.tensor(2)}])
+            {'x': tensor([1, 2])}
+        """
         if not samples:
             return {}
         if isinstance(samples[0], dict):
@@ -559,6 +892,18 @@ class TorchModelLearner:
         return torch.stack(tensors, dim=0)
 
     def _reduce_tree(self, values: Any):
+        """Reduce nested hyperparameter outputs using `model_params_reduction`.
+
+        Args:
+            values: List of dictionaries or tensors.
+
+        Returns:
+            Any: Reduced structure, commonly a mean or first element.
+
+        Example:
+            >>> learner._reduce_tree([{'reward': 1.}, {'reward': 2.}])
+            {'reward': 1.5}
+        """
         if not values:
             return {}
         if isinstance(values[0], dict):
@@ -566,10 +911,34 @@ class TorchModelLearner:
         return self.model_params_reduction(values)
 
     def _var_dtype(self, name: str) -> torch.dtype:
+        """Return the dtype to use for the fluent `name` (currently `real_dtype`).
+
+        Args:
+            name: Fluent identifier (unused but retained for API parity).
+
+        Returns:
+            torch.dtype: Preferred dtype for tensors.
+
+        Example:
+            >>> learner._var_dtype('some_fluent')
+            torch.float32
+        """
         del name
         return self.real_dtype
 
-    def _infer_batch_dim(self, structure: Dict[str, torch.Tensor]) -> int:
+def _infer_batch_dim(self, structure: Dict[str, torch.Tensor]) -> int:
+        """Infer the leading batch size from any tensor in the structure.
+
+        Args:
+            structure: Dictionary containing tensors of shape `(batch, ...)`.
+
+        Returns:
+            int: Observed batch dimension or fallback to `batch_size_train`.
+
+        Example:
+            >>> learner._infer_batch_dim({'x': torch.zeros(5, 3)})
+            5
+        """
         for value in structure.values():
             tensor = self._ensure_tensor(value)
             if tensor.dim() > 0:
