@@ -24,8 +24,12 @@ except Exception:  # pragma: no cover - compiler will be provided later
 
 Args = Dict[str, Union[np.ndarray, torch.Tensor, Value, float, int, bool]]
 
-
-
+## do check
+# _tree_map function
+#comipler args
+#        self._compiled = compiled
+#     self.compiler_class = compiled.__class__
+# _wrap_callable function
 
 def _tree_map(fn: Callable[[Any], Any], tree: Any) -> Any:
     """Apply `fn` recursively to values living inside nested containers."""
@@ -57,6 +61,20 @@ class TorchRDDLSimulator(RDDLSimulator):
         
         
         """Creates a simulator for the given RDDL model with torch backend.
+        :param generator: the torch PRNG generator for sampling random variables
+        :param rddl: the RDDL model to simulate
+
+        :param raise_error: whether to raise exceptions when errors occur in the
+        middle of evaluating a Jax expression; instead they are accumulated and
+        returned to the user upon complete evaluation of the expression
+        
+        :param logger: to log information about compilation to file
+        :param keep_tensors: whether the sampler takes actions and
+        returns state in numpy array form
+        :param objects_as_strings: whether to return object values as strings (defaults
+        to integer indices if False)
+        :param python_functions: dictionary of external Python functions to call from RDDL
+        :param **compiler_args: keyword arguments to pass to the Torch compiler
 
         This mirrors the public API of :class:`pyRDDLGym_jax.core.simulator.JaxRDDLSimulator`.
         """
@@ -65,13 +83,14 @@ class TorchRDDLSimulator(RDDLSimulator):
             generator.manual_seed(round(time.time() * 1000))
         self.key = generator
         self.raise_error = raise_error
-        #####
+        
         self.logic = logic
         self.compiler_factory = compiler_factory or TorchRDDLCompiler
+        
         self.compiler_class = None
         self._compiled = None
         self.compiler_args = compiler_args
-        ##### 
+        
 
         super(TorchRDDLSimulator, self).__init__(
             rddl, logger=logger,
@@ -93,9 +112,12 @@ class TorchRDDLSimulator(RDDLSimulator):
                 'Provide a compiler_factory argument pointing to a torch compiler.')
 
         rddl = self.rddl
+        # compiler arguments containing for example logic
+
         compiler_kwargs = dict(self.compiler_args)
         if 'logic' not in compiler_kwargs and self.logic is not None:
             compiler_kwargs['logic'] = self.logic
+
         compiled = self.compiler_factory(
             rddl,
             logger=self.logger,
@@ -103,7 +125,9 @@ class TorchRDDLSimulator(RDDLSimulator):
             **compiler_kwargs
         )
         compiled.compile(log_expr=True, log_jax_expr=False, heading='SIMULATION MODEL')
-        ###
+        ####
+        # this is defferent from jax simulator because its give as compiled object
+        # and their class attributes
         self._compiled = compiled
         self.compiler_class = compiled.__class__
         #### 
@@ -115,7 +139,7 @@ class TorchRDDLSimulator(RDDLSimulator):
         self.preconds = _tree_map(self._wrap_callable, compiled.preconditions)
         self.terminals = _tree_map(self._wrap_callable, compiled.terminations)
         self.reward = self._wrap_callable(compiled.reward)
-        torch_cpfs = _tree_map(self._wrap_callable, compiled.cpfs)
+        torch_cpfs = _tree_map(self._wrap_callable, compiled.cpfs) # cpfs are dict of callable expressions
         self.model_params = compiled.model_params
 
         ########## #### #### #### #### #### #### #### #### #### 
@@ -141,23 +165,22 @@ class TorchRDDLSimulator(RDDLSimulator):
         self.grounded_noop_actions = rddl.ground_vars_with_values(self.noop_actions)
         self.grounded_action_ranges = rddl.ground_vars_with_value(rddl.action_ranges)
         self._pomdp = bool(rddl.observ_fluents)
-        # cached for performance 
+        # cached for performance  
         self.invariant_names = [f'Invariant {i}' for i in range(len(rddl.invariants))]
         self.precond_names = [f'Precondition {i}' for i in range(len(rddl.preconditions))]
         self.terminal_names = [f'Termination {i}' for i in range(len(rddl.terminations))]
     
     
-    #### i dont see it in the oroginal simulator #### 
+    ############## 1 
     def _wrap_callable(self, func: Optional[Callable]):
         if func is None:
             return None
-
+        # Wraps a callable to match the expected signature
         def wrapped(*args, **kwargs):
             return func(*args, **kwargs)
 
         return wrapped
-    #### #### #### #### #### #### #### #### #### #### #### #### #### 
-
+    
     def handle_error_code(self, error: int, msg: str) -> None:
         if self.raise_error and error:
             compiler = self.compiler_class
@@ -183,7 +206,7 @@ class TorchRDDLSimulator(RDDLSimulator):
                         f'{loc} is not satisfied.')
                 return False
         return True
-
+     
     def check_action_preconditions(self, actions: Args, silent: bool=False) -> bool:
         '''Throws an exception if the action preconditions are not satisfied.'''
         subs = self.subs
@@ -246,17 +269,17 @@ class TorchRDDLSimulator(RDDLSimulator):
 
             # convert object integer to string representation 
             state_values = subs[state]
-            view_values = state_values #why its save the value 
+            view_values = state_values # this is to save the value because its tensor and we need to convert it to numpy (pyRDDLGym function)
             if self.objects_as_strings:
                 ptype = rddl.variable_ranges[state]
                 if ptype not in RDDLValueInitializer.NUMPY_TYPES:
                     view_values = rddl.index_to_object_string_array(
-                        ptype, self._to_numpy(state_values)) ### why do to it?
+                        ptype, self._to_numpy(state_values)) # this converts tensor to numpy array for string conversion (pyRDDLGym function)
             # optional grounding of state dictionary
             if keep_tensors:
                 self.state[state] = view_values
             else:
-                tensorless = self._to_numpy(view_values) # again why to do it?
+                tensorless = self._to_numpy(view_values) # convert to numpy array if not keeping tensors because grounding function need numpy array (pyRDDLGym function)
                 self.state.update(rddl.ground_var_with_values(state, tensorless))
         # update observation
         if self._pomdp:
