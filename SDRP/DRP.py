@@ -4,6 +4,10 @@ import os
 import csv
 
 import pyRDDLGym
+# form pyRDDLGym.core.compiler import RDDLLiftedModel
+
+
+
 from pyRDDLGym_jax.core import logic
 import matplotlib
 from pyRDDLGym.core import env
