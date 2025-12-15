@@ -926,7 +926,7 @@ class TorchModelLearner:
         del name
         return self.real_dtype
 
-def _infer_batch_dim(self, structure: Dict[str, torch.Tensor]) -> int:
+    def _infer_batch_dim(self, structure: Dict[str, torch.Tensor]) -> int:
         """Infer the leading batch size from any tensor in the structure.
 
         Args:
