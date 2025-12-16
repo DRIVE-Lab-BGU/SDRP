@@ -178,7 +178,7 @@ earte file pilicies that contain drp slp
 
 
 # model
-
+to do cliping to the gra
 
 
 
