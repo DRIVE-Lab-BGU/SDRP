@@ -21,7 +21,7 @@ from pyRDDLGym_jax.core import (simulator,
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
-import timeg
+import time
 
 
 
