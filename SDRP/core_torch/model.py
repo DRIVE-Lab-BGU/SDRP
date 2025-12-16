@@ -162,22 +162,26 @@ class TorchModelLearner:
         if optimizer_kwargs is None:
             optimizer_kwargs = {'lr': 1e-3}
         self.optimizer_kwargs = optimizer_kwargs
+        #
         self.optimizer_factory = optimizer
+        #
         self.initializer = initializer or self._default_initializer
         self.wrap_non_bool = wrap_non_bool
         self.use64bit = use64bit
-        self.real_dtype = torch.float64 if use64bit else torch.float32
+        self.real_dtype = torch.float64 if use64bit else torch.float32 
         self.bool_fluent_loss = bool_fluent_loss
         self.real_fluent_loss = real_fluent_loss
         self.int_fluent_loss = int_fluent_loss
         self.logic = logic
         self.model_params_reduction = model_params_reduction
+        #
         self.compiler_factory = compiler_factory or TorchRDDLCompilerWithGrad
         if device is None:
             device = torch.device('cpu')
         elif isinstance(device, str):
             device = torch.device(device)
         self.device = device
+        # 
         self.generator = torch.Generator(device='cpu')
         self.generator.manual_seed(round(time.time() * 1000))
 
@@ -221,6 +225,7 @@ class TorchModelLearner:
         Example:
             >>> learner._validate_param_ranges()  # no exception means ok
         """
+        # here it call to self.rddl.non_fluents because its a function called in init that get self.rddl
         for (name, values) in self.param_ranges.items():
             if name not in self.rddl.non_fluents:
                 raise ValueError(f'param_ranges key <{name}> is not a valid non-fluent.')
@@ -255,6 +260,8 @@ class TorchModelLearner:
             print_warnings=True
         )
         self.compiled.compile(log_expr=True, heading='RELAXED MODEL')
+        # JAX wants a single pure, JIT-able function → compiler builds it
+	    # Torch wants imperative, debuggable execution → model builds it
         step_fn = self._build_transition_function()
 
         def _torch_wrapped_step(key, param_fluents, subs, actions, hyperparams):
@@ -412,7 +419,9 @@ class TorchModelLearner:
             next_subs, hyperparams = step_fn(
                 key, param_fluents, subs, actions, hyperparams)
             total_loss = torch.zeros(1, dtype=self.real_dtype, device=self.device)
+            #
             count = max(1, len(next_fluents))
+            #
             for (name, next_value) in next_fluents.items():
                 preds = next_subs[name].to(self.real_dtype)
                 targets = self._ensure_tensor(next_value, dtype=self.real_dtype).unsqueeze(0)
@@ -422,9 +431,13 @@ class TorchModelLearner:
                     loss_values = self.real_fluent_loss(targets, preds)
                 else:
                     loss_values = self.int_fluent_loss(targets, preds)
+                    # total_loss = total_loss + torch.mean(loss_values) / count 
+                    # mean over batch and add to total loss
+                    # mean beca
                 total_loss = total_loss + torch.mean(loss_values) / count
             return total_loss.squeeze(), hyperparams
-
+        
+        # loss with the parameters mapped to their fluents
         def _torch_wrapped_batched_loss(key, params, subs, actions,
                                         next_fluents, hyperparams):
             param_fluents = map_fn(params)
@@ -510,6 +523,8 @@ class TorchModelLearner:
                 zero_grads = {name: True for name in params}
                 return params, optimizer, float('nan'), zero_grads, hyperparams
             loss.backward()
+            # if we wnat we can clip gradients here 
+            # we nned to decide if we want to clip by norm
             zero_grads = {}
             for (name, tensor) in params.items():
                 grad = tensor.grad
