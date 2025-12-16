@@ -372,6 +372,8 @@ class TorchRDDLSimulator(RDDLSimulator):
             if self.objects_as_strings:
                 ptype = rddl.variable_ranges[state]
                 if ptype not in RDDLValueInitializer.NUMPY_TYPES:
+                    # its convert tensor to numpy array for string conversion because pyRDDLGym function need numpy array
+                    # 
                     view_values = rddl.index_to_object_string_array(
                         ptype, self._to_numpy(state_values)) # this converts tensor to numpy array for string conversion (pyRDDLGym function)
             # optional grounding of state dictionary
