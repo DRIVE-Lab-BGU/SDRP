@@ -21,7 +21,7 @@ from pyRDDLGym_jax.core import (simulator,
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
-import time
+import timeg
 
 
 
@@ -58,16 +58,16 @@ domain_file = os.path.join(base_path, "instances", problem, "domain.rddl")
 instance_file = os.path.join(base_path, "instances", problem, instance)
 
 
-class dqn(nn.Module):
-    def __init__(self):
-        super(dqn, self).__init__()
-        self.fc1 = nn.Linear(4, 128)
-        self.fc2 = nn.Linear(128, 2)
+# class dqn(nn.Module):
+#     def __init__(self):
+#         super(dqn, self).__init__()
+#         self.fc1 = nn.Linear(4, 128)
+#         self.fc2 = nn.Linear(128, 2)
 
-    def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
+#     def forward(self, x):
+#         x = F.relu(self.fc1(x))
+#         x = self.fc2(x)
+#         return x
     
 
 myEnv = pyRDDLGym.make(domain=domain_file,
