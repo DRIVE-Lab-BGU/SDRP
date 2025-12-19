@@ -48,7 +48,7 @@ if not os.path.exists('frames'):
 env.horizon = 90   # just to speed things up
 recorder = MovieGenerator("frames", "hvac", max_frames=env.horizon)
 env.set_visualizer(viz=None, movie_gen=recorder)
-agent = 
+
 agent = RandomAgent(action_space=env.action_space, num_actions=env.max_allowed_actions)
 agent.evaluate(env, episodes=10, render=True)
 env.close()
@@ -56,16 +56,16 @@ env.close()
 if not os.path.exists('frames'):
     os.makedirs('frames')
 env.horizon = 30   # just to speed things up
-recorder = MovieGenerator("frames", "traffic", max_frames=env.horizon)
+recorder = MovieGenerator("frames", "HVAC", max_frames=env.horizon)
 env.set_visualizer(viz=None, movie_gen=recorder)
 
-Image(filename='frames/traffic_0.gif') 
+#Image(filename='frames/traffic_0.gif') 
 #########
 import shutil
 from pathlib import Path
 
-src = Path("frames/traffic_0.gif")
-dst = Path.home() / "Downloads" / "traffic_0.gif"
+src = Path("frames/HVAC_0.gif")
+dst = Path.home() / "הורדות" / "HVAC_0.gif"
 
 shutil.copy(src, dst)
 print(f"Saved GIF to {dst}")
