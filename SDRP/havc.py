@@ -1,46 +1,71 @@
+####
+import sys
 import os
+import csv
+import imageio
 import pyRDDLGym
-from pyRDDLGym.core.policy import RandomPolicy
-from pyRDDLGym.core.visualizer import RDDLVisualizer
+# form pyRDDLGym.core.compiler import RDDLLiftedModel
+from IPython.display import Image
+import os
 
-# ===== paths =====
-base_path = os.path.dirname(os.path.abspath(__file__))
+import pyRDDLGym
+from pyRDDLGym.core.policy import RandomAgent
+from pyRDDLGym.core.visualizer.movie import MovieGenerator
 
-domain_file = os.path.join(base_path, "instances", "havc", "domain.rddl")
-instance_file = os.path.join(base_path, "instances", "havc", "instance2.rddl")
 
-# ===== create environment =====
-env = pyRDDLGym.make(
-    domain_file=domain_file,
-    instance_file=instance_file
+from pyRDDLGym_jax.core import logic
+import matplotlib
+from pyRDDLGym.core import env
+
+from pyRDDLGym_jax.core import (simulator,
+                            model,
+                                tuning,
+                                logic,
+                                compiler,
+                                planner)
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+import time
+
+
+
+
+from importlib.metadata import version, PackageNotFoundError
+# from pyRDDLGym_jax.core.planner import (
+# from SDRP.Planner import
+from planner import (
+    JaxDeepReactivePolicy,
+    JaxBackpropPlanner,
+    JaxOfflineController,
+    load_config
 )
 
-# ===== weak policy (random) =====
-policy = RandomPolicy(env.model)
 
-# ===== visualizer =====
-viz = RDDLVisualizer(env.model)
-
-# ===== rollout =====
-state = env.reset()
-frames = []
-
-horizon = 50  # קצר! רק לראות תנועה
-
-for t in range(horizon):
-    action = policy.sample_action(state)
-    state, reward, done, info = env.step(action)
-
-    frame = viz.render(state)
-    frames.append(frame)
-
-    if done:
-        break
-
+env = pyRDDLGym.make('HVAC_ippc2023', '1')
+if not os.path.exists('frames'):
+    os.makedirs('frames')
+env.horizon = 90   # just to speed things up
+recorder = MovieGenerator("frames", "hvac", max_frames=env.horizon)
+env.set_visualizer(viz=None, movie_gen=recorder)
+agent = 
+agent = RandomAgent(action_space=env.action_space, num_actions=env.max_allowed_actions)
+agent.evaluate(env, episodes=10, render=True)
 env.close()
 
-# ===== save GIF =====
-gif_path = "havc_demo.gif"
-viz.save_gif(frames, gif_path, fps=5)
+if not os.path.exists('frames'):
+    os.makedirs('frames')
+env.horizon = 30   # just to speed things up
+recorder = MovieGenerator("frames", "traffic", max_frames=env.horizon)
+env.set_visualizer(viz=None, movie_gen=recorder)
 
-print(f"GIF saved to {gif_path}")
+Image(filename='frames/traffic_0.gif') 
+#########
+import shutil
+from pathlib import Path
+
+src = Path("frames/traffic_0.gif")
+dst = Path.home() / "Downloads" / "traffic_0.gif"
+
+shutil.copy(src, dst)
+print(f"Saved GIF to {dst}")
