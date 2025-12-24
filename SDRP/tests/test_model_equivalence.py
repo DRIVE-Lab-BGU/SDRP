@@ -24,7 +24,7 @@ class _TorchNativeLogic:
     pass
 def _load_reservoir_rddl() -> str:
     domain_path = os.path.join(ROOT, "instances", "reservoir", "domain.rddl")
-    instance_path = os.path.join(ROOT, "instances", "reservoir", "instance_1.rddl")
+    instance_path = os.path.join(ROOT, "instances", "reservoir", "instance_4.rddl")
     with open(domain_path, "r", encoding="utf-8", errors="replace") as f:
         domain = f.read()
     with open(instance_path, "r", encoding="utf-8", errors="replace") as f:
