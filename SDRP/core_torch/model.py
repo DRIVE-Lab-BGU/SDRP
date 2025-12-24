@@ -1,5 +1,15 @@
 """Torch port of pyRDDLGym_jax.core.model with a torch-native learner."""
 
+
+
+# todo 
+# chech _torch_init
+# check torch_update
+# _torch_compile_rddl -  after i check the compiler i need rto make sure that the step function is correct
+# optimize_generator - check the main training loop
+# learned_model
+
+
 import math
 import time
 from collections import deque
@@ -121,6 +131,9 @@ class TorchModelLearner:
                  optimizer: Callable[..., Optimizer]=torch.optim.Adam,
                  optimizer_kwargs: Optional[Kwargs]=None,
                  initializer: Optional[Callable[[torch.Generator, Tuple[int, ...], torch.dtype], torch.Tensor]]=None,
+                 clip_grad_norm: Optional[float]=None,
+                 clip_grad_norm_type: float=2.0,
+                 clip_grad_value: Optional[float]=None,
                  wrap_non_bool: bool=True,
                  use64bit: bool=False,
                  bool_fluent_loss: LossFunction=binary_cross_entropy(),
@@ -139,6 +152,9 @@ class TorchModelLearner:
             optimizer: Optimizer constructor such as `torch.optim.Adam`.
             optimizer_kwargs: Extra keyword args forwarded to the optimizer.
             initializer: Callable creating the initial tensor for each param.
+            clip_grad_norm: Max norm for gradients (None disables norm clipping).
+            clip_grad_norm_type: p-norm type used for norm clipping.
+            clip_grad_value: Max absolute value for gradients (None disables value clipping).
             wrap_non_bool: If True, wrap params to enforce bounds analytically.
             use64bit: If True, prefer float64 tensors for precision.
             bool_fluent_loss: Loss used for boolean state prediction error.
@@ -164,8 +180,10 @@ class TorchModelLearner:
         self.optimizer_kwargs = optimizer_kwargs
         #
         self.optimizer_factory = optimizer
-        #
         self.initializer = initializer or self._default_initializer
+        self.clip_grad_norm = clip_grad_norm
+        self.clip_grad_norm_type = clip_grad_norm_type
+        self.clip_grad_value = clip_grad_value
         self.wrap_non_bool = wrap_non_bool
         self.use64bit = use64bit
         self.real_dtype = torch.float64 if use64bit else torch.float32 
@@ -174,7 +192,7 @@ class TorchModelLearner:
         self.int_fluent_loss = int_fluent_loss
         self.logic = logic
         self.model_params_reduction = model_params_reduction
-        #
+ 
         self.compiler_factory = compiler_factory or TorchRDDLCompilerWithGrad
         if device is None:
             device = torch.device('cpu')
@@ -271,7 +289,7 @@ class TorchModelLearner:
                 local_subs[name] = param
             next_subs, _, hyperparams = step_fn(key, actions, local_subs, hyperparams)
             return next_subs, hyperparams
-
+        # batched over batch_size_train
         def _torch_wrapped_batched_step(key, param_fluents, subs, actions, hyperparams):
             batch_outputs = []
             hyperparams_list = []
@@ -361,7 +379,11 @@ class TorchModelLearner:
                     case_indices[name] = 2
                 else:
                     case_indices[name] = 3
-            self.param_ranges = processed_ranges
+            # to make sure we use the processed ranges with no Nones
+            # before it was self.param_ranges = processed_ranges
+            # if we call _torch_map multiple times it will fail 
+            # today it is called only once in init but better be safe and maybe in future we call it again
+            local_ranges = processed_ranges
 
         def _torch_params_to_fluents(params: Dict[str, nn.Parameter]):
             param_fluents = {}
@@ -371,7 +393,7 @@ class TorchModelLearner:
                     param_fluents[name] = torch.sigmoid(value)
                 else:
                     if self.wrap_non_bool:
-                        lower, upper = self.param_ranges[name]
+                        lower, upper = local_ranges[name]
                         weight = torch.as_tensor(
                             lower, dtype=self.real_dtype, device=self.device)
                         span = torch.as_tensor(
@@ -419,9 +441,8 @@ class TorchModelLearner:
             next_subs, hyperparams = step_fn(
                 key, param_fluents, subs, actions, hyperparams)
             total_loss = torch.zeros(1, dtype=self.real_dtype, device=self.device)
-            #
+            # to make sure we do not divide by zero
             count = max(1, len(next_fluents))
-            #
             for (name, next_value) in next_fluents.items():
                 preds = next_subs[name].to(self.real_dtype)
                 targets = self._ensure_tensor(next_value, dtype=self.real_dtype).unsqueeze(0)
@@ -461,6 +482,7 @@ class TorchModelLearner:
             >>> init_params, init_opt = learner._torch_init(lambda x: x)
             >>> params, opt = init_params(torch.Generator())
         """
+        #### to check ####
         def _init_params_optimizer(key: torch.Generator):
             params = {}
             names = list(self.param_ranges.keys())
@@ -484,7 +506,7 @@ class TorchModelLearner:
             return param_dict, optimizer
 
         return _init_params_optimizer, _init_optimizer
-
+    #### to check ####
     def _torch_update(self, loss_fn):
         """Create an SGD update rule along with projection of constrained params.
 
@@ -513,7 +535,9 @@ class TorchModelLearner:
                     max=torch.as_tensor(high, dtype=self.real_dtype, device=self.device)
                 ))
             return params
-
+###########################################################################
+            ## were i want to chack the update function ##
+###########################################################################
         def _torch_wrapped_params_update(key, params, subs, actions,
                                          next_fluents, hyperparams, optimizer):
             optimizer.zero_grad()
@@ -523,8 +547,16 @@ class TorchModelLearner:
                 zero_grads = {name: True for name in params}
                 return params, optimizer, float('nan'), zero_grads, hyperparams
             loss.backward()
-            # if we wnat we can clip gradients here 
-            # we nned to decide if we want to clip by norm
+            #####   
+            # here is the place I want to add gradient clipping 
+            ###
+            if self.clip_grad_norm is not None:
+                torch.nn.utils.clip_grad_norm_(
+                    params.values(), max_norm=self.clip_grad_norm,
+                    norm_type=self.clip_grad_norm_type)
+            if self.clip_grad_value is not None:
+                torch.nn.utils.clip_grad_value_(
+                    params.values(), clip_value=self.clip_grad_value)
             zero_grads = {}
             for (name, tensor) in params.items():
                 grad = tensor.grad
@@ -533,7 +565,7 @@ class TorchModelLearner:
             optimizer.step()
             _project_params(params)
             return params, optimizer, float(loss.detach().cpu().item()), zero_grads, hyperparams
-
+###############################################################################################################
         return _torch_wrapped_params_update, _project_params
 
     def _batched_init_subs(self):
@@ -577,7 +609,7 @@ class TorchModelLearner:
         if last:
             return last.pop()
         return None
-
+    #### to check ####
     def optimize_generator(self, data: DataStream,
                            key: Optional[torch.Generator]=None,
                            epochs: int=999999,
@@ -620,9 +652,16 @@ class TorchModelLearner:
         progress_bar = None
         if print_progress and tqdm is not None:
             progress_bar = tqdm(total=100, bar_format='{l_bar}{bar}| {elapsed} {postfix}')
-
+        ########### check here ##########       
+        # main training loop
         for (it, (states, actions, next_states)) in enumerate(data):
             status = TorchLearnerStatus.NORMAL
+            # we use _tensorize_structure to make sure that the states are tensors 
+            # the state come from the data stream so they can be lists or numpy arrays
+
+            # gradient update step
+
+            
             subs.update(self._tensorize_structure(states))
             actions_tensor = self._tensorize_structure(actions)
             next_states_tensor = self._tensorize_structure(next_states)
@@ -652,6 +691,7 @@ class TorchModelLearner:
                 'key': rng,
                 'progress': progress_percent
             }
+            # update progress bar
             if print_progress and progress_bar is not None:
                 progress_bar.set_description(
                     f'{it:7} it / {loss:12.8f} train / {status.value} status', refresh=False)
@@ -665,7 +705,7 @@ class TorchModelLearner:
 
             if status.is_terminal():
                 break
-
+     ################################################################           
     def evaluate_loss(self, data: DataStream,
                       key: Optional[torch.Generator],
                       param_fluents: Params) -> float:
@@ -686,6 +726,10 @@ class TorchModelLearner:
         subs = self._batched_init_subs()
         hyperparams = self.compiled.model_params
         mean_loss = 0.0
+        # in torch the loss is computed inside use loss_fn
+        # because the loss_fn use to update the parameters (no torch.no_grad)
+        # so we can warp the loss computation inside loss_fn
+
         for (it, (states, actions, next_states)) in enumerate(data):
             subs.update(self._tensorize_structure(states))
             actions_tensor = self._tensorize_structure(actions)
@@ -709,6 +753,7 @@ class TorchModelLearner:
             mean_loss += (loss_value - mean_loss) / (it + 1)
         return mean_loss
 
+    #### to check ####
     def learned_model(self, param_fluents: Params) -> RDDLLiftedModel:
         """Produce a Python RDDL model with non-fluents replaced by learned values.
 
