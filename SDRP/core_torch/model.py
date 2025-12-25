@@ -131,6 +131,7 @@ class TorchModelLearner:
                  optimizer: Callable[..., Optimizer]=torch.optim.Adam,
                  optimizer_kwargs: Optional[Kwargs]=None,
                  initializer: Optional[Callable[[torch.Generator, Tuple[int, ...], torch.dtype], torch.Tensor]]=None,
+                 noise : float = 0.0,
                  clip_grad_norm: Optional[float]=None,
                  clip_grad_norm_type: float=2.0,
                  clip_grad_value: Optional[float]=None,
@@ -142,6 +143,7 @@ class TorchModelLearner:
                  logic: torch_logic.Logic=torch_logic.FuzzyLogic(),
                  model_params_reduction: Callable[[Any], Any]=lambda x: x[0],
                  compiler_factory: Optional[Callable[..., Any]]=None,
+
                  device: Optional[torch.device]=None) -> None:
         """Create a learner that fits non-fluent ranges with gradient descent.
         Args:
@@ -152,6 +154,7 @@ class TorchModelLearner:
             optimizer: Optimizer constructor such as `torch.optim.Adam`.
             optimizer_kwargs: Extra keyword args forwarded to the optimizer.
             initializer: Callable creating the initial tensor for each param.
+            noise: Standard deviation of Gaussian noise added to actions during training.
             clip_grad_norm: Max norm for gradients (None disables norm clipping).
             clip_grad_norm_type: p-norm type used for norm clipping.
             clip_grad_value: Max absolute value for gradients (None disables value clipping).
@@ -181,6 +184,7 @@ class TorchModelLearner:
         #
         self.optimizer_factory = optimizer
         self.initializer = initializer or self._default_initializer
+        self.noise = noise
         self.clip_grad_norm = clip_grad_norm
         self.clip_grad_norm_type = clip_grad_norm_type
         self.clip_grad_value = clip_grad_value
@@ -663,7 +667,13 @@ class TorchModelLearner:
 
             
             subs.update(self._tensorize_structure(states))
+            # here i add the noise to the actions
             actions_tensor = self._tensorize_structure(actions)
+            actions_tensor = actions_tensor + torch.normal(
+                mean=0.0,
+                std=self.noise,
+                size=actions_tensor.size(),
+                device=self.device)
             next_states_tensor = self._tensorize_structure(next_states)
 
             subkey = self._split_once(rng)
