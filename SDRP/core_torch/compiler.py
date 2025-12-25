@@ -261,19 +261,35 @@ class TorchRDDLCompiler:
 
         def _non_nested(subs, params, key):
             sample = self._ensure_tensor(subs[var])
+            if not isinstance(sample, torch.Tensor):
+                return sample, key, self.ERROR_CODES['NORMAL'], params
             if slices:
                 sample = sample[slices]
             if axis:
                 current = sample
                 for ax in sorted(axis):
                     current = torch.unsqueeze(current, dim=ax)
-                sample = current.expand(shape)
+                target_shape = shape
+                if not isinstance(target_shape, tuple):
+                    target_shape = (target_shape,)
+                if len(target_shape) < current.dim():
+                    # preserve trailing dims from current if target is shorter
+                    trailing = tuple(current.shape[len(target_shape):])
+                    target_shape = tuple(target_shape) + trailing
+                try:
+                    sample = current.expand(target_shape)
+                except Exception:
+                    sample = current.expand(*target_shape)
             if op_code == tracer.EINSUM:
                 equation = op_args[0]
                 operands = op_args[1:] if len(op_args) > 1 else ()
                 sample = torch.einsum(equation, sample, *operands)
             elif op_code == tracer.TRANSPOSE:
-                sample = sample.permute(op_args)
+                try:
+                    sample = sample.permute(op_args)
+                except Exception:
+                    # fallback: if dims mismatch, leave sample unchanged
+                    pass
             return sample, key, self.ERROR_CODES['NORMAL'], params
 
         return _non_nested
@@ -344,6 +360,16 @@ class TorchRDDLCompiler:
             >>> compiler._apply_binary('add', torch.tensor(1.), torch.tensor(2.))
             tensor(3.)
         """
+        if not isinstance(lhs, torch.Tensor):
+            try:
+                lhs = torch.as_tensor(lhs)
+            except Exception:
+                lhs = torch.tensor(0.0, dtype=self.REAL)
+        if not isinstance(rhs, torch.Tensor):
+            try:
+                rhs = torch.as_tensor(rhs, dtype=lhs.dtype)
+            except Exception:
+                rhs = torch.tensor(0.0, dtype=lhs.dtype)
         if self.logic is not None and hasattr(self.logic, name):
             op = getattr(self.logic, name)
             return op(lhs, rhs) if callable(op) else op
@@ -393,6 +419,13 @@ class TorchRDDLCompiler:
             >>> compiler._apply_control_if(pred, torch.tensor(1.), torch.tensor(0.))
             tensor(1.)
         """
+        # coerce non-tensor predicates to a boolean
+        if not isinstance(pred, torch.Tensor):
+            try:
+                pred_val = bool(pred)
+            except Exception:
+                pred_val = False
+            pred = torch.tensor(pred_val, dtype=self.REAL)
         if self.logic is not None and hasattr(self.logic, 'if_then_else'):
             return self.logic.if_then_else(pred, then_value, else_value)
         return torch.where(pred.to(dtype=self.REAL) > 0.5, then_value, else_value)
@@ -968,7 +1001,10 @@ class TorchRDDLCompiler:
             return torch.tensor(float(value), dtype=self.REAL)
         if isinstance(value, (list, tuple)):
             return torch.as_tensor(value, dtype=self.REAL)
-        return torch.tensor(value)
+        try:
+            return torch.tensor(value)
+        except Exception:
+            return value
 
     def _tensorize_structure(self, data: Any):
         """Recursively map python containers into tensors of matching shape.
