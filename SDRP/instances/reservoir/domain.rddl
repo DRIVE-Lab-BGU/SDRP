@@ -1,4 +1,4 @@
-    -domain reservoir_control_cont {
+domain reservoir_control_cont {
 
 	requirements = {
 		concurrent,           // different reservoirs are controlled independently
