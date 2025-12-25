@@ -667,13 +667,14 @@ class TorchModelLearner:
 
             
             subs.update(self._tensorize_structure(states))
-            # here i add the noise to the actions
+            # here i add the noise to the actions #
             actions_tensor = self._tensorize_structure(actions)
             actions_tensor = actions_tensor + torch.normal(
                 mean=0.0,
                 std=self.noise,
                 size=actions_tensor.size(),
                 device=self.device)
+            ################################
             next_states_tensor = self._tensorize_structure(next_states)
 
             subkey = self._split_once(rng)
