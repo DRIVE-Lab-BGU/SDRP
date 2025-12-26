@@ -267,6 +267,17 @@ class TorchBackpropPlanner:
         for level in sorted(compiled.levels.keys()):
             level_order.extend(compiled.levels[level])
 
+        def _ensure_batch(tensor, batch_dim: Optional[int]):
+            if batch_dim is None:
+                return tensor
+            if not isinstance(tensor, torch.Tensor):
+                tensor = torch.as_tensor(tensor, dtype=compiled.REAL)
+            if tensor.dim() == 0:
+                return tensor.expand(batch_dim)
+            if tensor.shape[0] == batch_dim:
+                return tensor
+            return tensor.unsqueeze(0).expand((batch_dim,) + tuple(tensor.shape))
+
         def _rollouts(key: torch.Generator,
                       policy_params: Params,
                       policy_hyperparams: Dict[str, Any],
@@ -277,9 +288,16 @@ class TorchBackpropPlanner:
             if model_params is None:
                 model_params = compiled.model_params
             local_subs = {k: v.clone() for (k, v) in subs.items()}
+            batch_dim = None
+            for v in local_subs.values():
+                if isinstance(v, torch.Tensor) and v.dim() > 0:
+                    batch_dim = v.shape[0]
+                    break
             rewards = []
             for step in range(self.horizon):
                 actions = policy_fn(key, policy_params, policy_hyperparams, step, local_subs)
+                if batch_dim is not None:
+                    actions = {k: _ensure_batch(v, batch_dim) for (k, v) in actions.items()}
                 local_subs.update(actions)
                 for cpf in level_order:
                     fn = compiled.cpfs[cpf]

@@ -362,7 +362,7 @@ class TorchRDDLCompiler:
         """
         if not isinstance(lhs, torch.Tensor):
             try:
-                lhs = torch.as_tensor(lhs)
+                lhs = torch.as_tensor(lhs, dtype=self.REAL)
             except Exception:
                 lhs = torch.tensor(0.0, dtype=self.REAL)
         if not isinstance(rhs, torch.Tensor):
@@ -370,6 +370,25 @@ class TorchRDDLCompiler:
                 rhs = torch.as_tensor(rhs, dtype=lhs.dtype)
             except Exception:
                 rhs = torch.tensor(0.0, dtype=lhs.dtype)
+
+        # align ranks
+        while lhs.dim() < rhs.dim():
+            lhs = lhs.unsqueeze(0)
+        while rhs.dim() < lhs.dim():
+            rhs = rhs.unsqueeze(0)
+
+        # try to align leading batch dimension if mismatched
+        if lhs.dim() > 0 and rhs.dim() > 0 and lhs.shape[0] != rhs.shape[0]:
+            target = max(lhs.shape[0], rhs.shape[0])
+            if lhs.shape[0] != target:
+                if lhs.shape[0] != 1:
+                    lhs = lhs.unsqueeze(0)
+                lhs = lhs.expand((target,) + lhs.shape[1:])
+            if rhs.shape[0] != target:
+                if rhs.shape[0] != 1:
+                    rhs = rhs.unsqueeze(0)
+                rhs = rhs.expand((target,) + rhs.shape[1:])
+
         if self.logic is not None and hasattr(self.logic, name):
             op = getattr(self.logic, name)
             return op(lhs, rhs) if callable(op) else op
@@ -378,7 +397,28 @@ class TorchRDDLCompiler:
         if name == 'sub':
             return torch.sub(lhs, rhs)
         if name == 'mul':
-            return torch.mul(lhs, rhs)
+            try:
+                return torch.mul(lhs, rhs)
+            except RuntimeError:
+                # heuristic broadcasting to align batch/object dims
+                if lhs.dim() == 1 and rhs.dim() == 1 and lhs.shape[0] != rhs.shape[0]:
+                    lhs = lhs.unsqueeze(-1)
+                    rhs = rhs.unsqueeze(0)
+                # pad smaller rank tensor with trailing singleton dims
+                while lhs.dim() < rhs.dim():
+                    lhs = lhs.unsqueeze(-1)
+                while rhs.dim() < lhs.dim():
+                    rhs = rhs.unsqueeze(-1)
+                try:
+                    lhs_b, rhs_b = torch.broadcast_tensors(lhs, rhs)
+                    return torch.mul(lhs_b, rhs_b)
+                except Exception:
+                    if lhs.dim() == 2 and rhs.dim() == 2:
+                        lhs = lhs.unsqueeze(-1)  # (b,n)->(b,n,1) or (n,n)->(n,n,1)
+                        rhs = rhs.unsqueeze(0)   # (n,n)->(1,n,n)
+                        lhs_b, rhs_b = torch.broadcast_tensors(lhs, rhs)
+                        return torch.mul(lhs_b, rhs_b)
+                    return torch.mul(lhs, rhs)
         if name == 'div':
             return torch.div(lhs, rhs)
         if name == 'pow':
@@ -470,6 +510,8 @@ class TorchRDDLCompiler:
         if axes is None:
             axes = tuple(range(tensor.dim()))
         axes = tuple(axes) if isinstance(axes, (list, tuple)) else (axes,)
+        if not isinstance(tensor, torch.Tensor):
+            tensor = torch.tensor(bool(tensor))
         result = tensor
         for axis in sorted(axes, reverse=True):
             if axis is None:
@@ -597,7 +639,10 @@ class TorchRDDLCompiler:
         if len(args) == 1 and op == '~':
             def _not(subs, params, key):
                 value, key, err, params = args[0](subs, params, key)
-                return self._apply_unary('logical_not', value.bool()), key, err, params
+                tensor = self._ensure_tensor(value)
+                if not isinstance(tensor, torch.Tensor):
+                    tensor = torch.tensor(bool(tensor))
+                return self._apply_unary('logical_not', tensor.bool()), key, err, params
             return _not
 
         if len(args) < 2:
@@ -607,10 +652,16 @@ class TorchRDDLCompiler:
 
         def _fn(subs, params, key):
             value, key, err, params = args[0](subs, params, key)
-            value = value.bool()
+            tensor = self._ensure_tensor(value)
+            if not isinstance(tensor, torch.Tensor):
+                tensor = torch.tensor(bool(tensor))
+            value = tensor.bool()
             for arg_fn in args[1:]:
                 rhs, key, err_rhs, params = arg_fn(subs, params, key)
-                rhs = rhs.bool()
+                rhs_tensor = self._ensure_tensor(rhs)
+                if not isinstance(rhs_tensor, torch.Tensor):
+                    rhs_tensor = torch.tensor(bool(rhs_tensor))
+                rhs = rhs_tensor.bool()
                 err |= err_rhs
                 if op in {'^', '&'}:
                     value = self._apply_binary('logical_and', value, rhs)
@@ -716,8 +767,18 @@ class TorchRDDLCompiler:
             >>> compiler._apply_function_unary('sqrt', torch.tensor(4.))
             tensor(2.)
         """
+        # simple override for ops that in logic expect init_params (e.g., sgn)
+        if op == 'sgn':
+            tensor = self._ensure_tensor(value)
+            if not isinstance(tensor, torch.Tensor):
+                tensor = torch.as_tensor(tensor, dtype=self.REAL)
+            return torch.sign(tensor)
         if self.logic is not None and hasattr(self.logic, op):
-            return getattr(self.logic, op)(value)
+            try:
+                return getattr(self.logic, op)(value)
+            except TypeError:
+                # logic op expects (id, init_params); fall back to torch op below
+                pass
         funcs = {
             'abs': torch.abs,
             'exp': torch.exp,
