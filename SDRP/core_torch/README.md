@@ -1,3 +1,13 @@
+(when i want to update yuval-branch 
+i push to yuval-branch-2 the updates
+git checkout yuval-branch
+git pull
+git checkout yuval-branch-2 -- README.md      
+git add README.md
+git commit -m"___"
+git push
+)
+
 # Packege Turorial ( for me )
 We want to train some againt to solve dome  planing problem( it can work also in rl problem)
 for this task we goona use a new package that base on PyRDDLGym_jax but with a few change:
