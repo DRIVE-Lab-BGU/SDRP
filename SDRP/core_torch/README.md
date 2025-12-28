@@ -8,10 +8,10 @@ for this task we goona use a new package that base on PyRDDLGym_jax but with a f
 
 # main files 
 In this packje we have a few main files :
-* logic
-* Simulator
-* Compiler 
-* Planner 
+* logic -the main idea ia create T-norm
+* Simulator - to create an envirument to contact
+* Compiler -  to make the torch "understend" the envarument
+* Planner - to creat a planner and controller
 
 ## Train and evaluate Agent
 To to it lets deep into the code
