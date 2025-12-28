@@ -11,9 +11,7 @@ from pyRDDLGym_jax.core.logic import FuzzyLogic
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
-MODULE_ROOT = os.path.join(ROOT, "SDRP")
-if MODULE_ROOT not in sys.path and os.path.isdir(MODULE_ROOT):
-    sys.path.insert(0, MODULE_ROOT)
+MODULE_ROOT = ROOT
 
 from core_torch.planner import TorchBackpropPlanner, TorchOfflineController, TorchStraightLinePlan  # noqa: E402
 from core_torch.logic import FuzzyLogic as TorchFuzzyLogic  # noqa: E402
