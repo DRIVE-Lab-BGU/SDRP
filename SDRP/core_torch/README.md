@@ -1,10 +1,17 @@
 # Packege Turorial ( for me )
-We wnat to train some againt to solve dome  planing problem( it can work also in rl problem)
+We want to train some againt to solve dome  planing problem( it can work also in rl problem)
 for this task we goona use a new package that base on PyRDDLGym_jax but with a few change:
 * this package write use pytorch
 * splite the algorithm for a few more files.
 * __
 * __
+
+# main files 
+In this packje we have a few main files :
+* logic
+* Simulator
+* Compiler 
+* Planner 
 
 ## Train and evaluate Agent
 To to it lets deep into the code
