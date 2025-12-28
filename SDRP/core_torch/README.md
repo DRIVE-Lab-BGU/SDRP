@@ -48,8 +48,10 @@ env.close()
 ```
 # create the environment 
 first we need to create the envitonment of our problem. 
-useing 2 files: instnace.rddl & domein.rddl.
-the package using this 2  flies by pyRDDLGym.make and create the env.
+useing 2 files: 
+* instnace.rddl 
+* domein.rddl \
+the package using this 2  flies by pyRDDLGym.make and create the env. \
 this envitronment is in numpy and also in normal logict (not the fuzzy logic) .
 * pyrddlgym.make -> backend: Type[RDDLSimulator]=RDDLSimulator that defines the logic
 
