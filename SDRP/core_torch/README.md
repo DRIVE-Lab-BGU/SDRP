@@ -24,7 +24,7 @@ In this packje we have a few main files :
 * Planner - to creat a planner and controller
 
 ## Train and evaluate Agent
-To to it lets deep into the code
+To to this lets deep into the code:
 * this code take from the original repo pyRDDLGym_jax 
 ```
 import pyRDDLGym
@@ -84,6 +84,10 @@ Useing model.py and make the environment to fuzzylogic useing the simulator.py a
 simulator.jax -> JaxRDDLCompiler -> from pyRDDLGym_jax.core.logic import ExactLogic (using line 121)
 ## **planner_args 
 _______
+# Logic
+Replace every discrete / non-differentiable logical operator with a smooth, parameterized function, so the entire RDDL model becomes differentiable end-to-end, and those parameters can be optimized with gradients.
+
+
 # comiler 
 JaxPlan Compiler (Original)
 
