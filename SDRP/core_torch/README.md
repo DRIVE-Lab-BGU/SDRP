@@ -119,6 +119,10 @@ This section provides an overview of the core files in the package and their fun
 * Tuning - Bayesian hyperparameter tuning for JAX planners via rollouts.
 * Planner - Gradient-based planning and policy optimization for RDDL in JAX.
 
+## Flow procces through the package 
+DO
+
+
 ## Logic
 ### Main Idea
 Replace every discrete / non-differentiable logical operator with a smooth, parameterized function, so the entire RDDL model becomes differentiable end-to-end, and those parameters can be optimized with gradients.  
