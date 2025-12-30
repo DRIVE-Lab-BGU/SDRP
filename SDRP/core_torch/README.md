@@ -19,7 +19,7 @@ for this task we goona use a new package that base on PyRDDLGym_jax but with a f
 # main files 
 In this packje we have a few main files :
 * logic  -  Convert the dynamics from discrete/hybrid to differentiable to make sure we can rollouts the gratient
-* Simulator - to create an envirument to contact
+* Simulator – runs the environment by applying actions to the model and returning the resulting next state & reward  
 * Compiler -  to make the torch "understend" the envarument
 * Planner - to creat a planner and controller
 
@@ -188,41 +188,17 @@ earte file pilicies that contain drp slp
 
 # Simulator 
 
+### Main Idea
 
-JaxBackpropPlanner get evn.modl and in its change by the logic 
+JaxRDDLSimulator extends RDDLSimulator to support the execution of RDDL domains by compiling CPFs, reward functions, and constraints into JAX-compatible functions, and incorporating additional JAX-specific mechanisms.
 
+JaxRDDLSimulator extends RDDLSimulator to support the execution of RDDL domains by compiling CPFs, reward functions, and constraints into JAX-compatible functions, and incorporating additional JAX-specific mechanisms.
 
-**planner_args go to the model  rddl by hyperparmaters (the config is there )
-its mean no more config file back there the user need to write what he wnat 
-for example
+### Main functions:
+Compiles CPFs/reward/invariants/preconditions/terminations with JaxRDDLCompiler, JITs them, threads a JAX PRNG key through every call, evaluates CPFs in topological order each step, converts JAX tensors back to grounded state/obs dicts, and samples reward/termination.
+### Differences from the original simulator:
+Uses JAX+XLA instead of eager NumPy, functional PRNG keys instead of in-place RNG, JAX error codes surfaced via handle_error_code instead of immediate Python exceptions, and returns JAX-derived arrays before optional grounding/string conversion.
 
-
-
-class dqn(nn.Module):
-    def __init__(self):
-        super(dqn, self).__init__()
-        self.fc1 = nn.Linear(4, 128)
-        self.fc2 = nn.Linear(128, 2)
-
-    def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
-
-
-and then 
-
-policy_net = DQN(n_observations, n_actions).to(device)
-and train the policy 
-
-
-
-
-
-
-
-
-# logic
 
 
 
