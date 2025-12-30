@@ -18,7 +18,7 @@ for this task we goona use a new package that base on PyRDDLGym_jax but with a f
 
 # main files 
 In this packje we have a few main files :
-* logic -the main idea ia create T-norm
+* logic  -  Convert the dynamics from discrete/hybrid to differentiable to make sure we can rollouts the gratient
 * Simulator - to create an envirument to contact
 * Compiler -  to make the torch "understend" the envarument
 * Planner - to creat a planner and controller
@@ -87,7 +87,30 @@ simulator.jax -> JaxRDDLCompiler -> from pyRDDLGym_jax.core.logic import ExactLo
 ## **planner_args 
 _______
 # Logic
-Replace every discrete / non-differentiable logical operator with a smooth, parameterized function, so the entire RDDL model becomes differentiable end-to-end, and those parameters can be optimized with gradients.
+### Main Idea
+Replace every discrete / non-differentiable logical operator with a smooth, parameterized function, so the entire RDDL model becomes differentiable end-to-end, and those parameters can be optimized with gradients.  
+
+implements a plug‑and‑play “logic backend” for pyRDDLGym in JAX, offering exact Boolean logic and smooth/differentiable fuzzy relaxations plus reparameterized sampling for discrete distributions.
+* plug-and-play denotes a modular architecture in which alternative logic backends (e.g., exact Boolean semantics or differentiable fuzzy relaxations with reparameterized sampling) can be interchanged transparently, as they conform to a common Logic interface and operator dictionary expected by the compiler.
+### Main Function
+* Comparison & rounding: 
+
+ Comparison/SigmoidComparison produce sigmoid-based ≷/==/sgn/argmax approximations with learnable slope stored in init_params[id]. Rounding/SoftRounding provide smooth floor/round (softfloor/softround) with tunable sharpness.
+* Negation & t-norms: 
+
+ Complement/StandardComplement implement 1–x. TNorm plus implementations (ProductTNorm, GodelTNorm, LukasiewiczTNorm, YagerTNorm) define fuzzy AND and forall aggregation variants; Yager uses an Lp-style norm with parameter p saved in init_params.
+* Random sampling: 
+
+RandomSampling interface with two concrete implementations. SoftRandomSampling uses differentiable relaxations: Discrete via Gumbel-softmax; Poisson via exponential thinning or truncated Gumbel-softmax with normal fallback for large rates; Binomial via truncated Gumbel-softmax or normal; NegativeBinomial via Gamma–Poisson mixture; Geometric via inverse-CDF with soft floor; Bernoulli via uniform threshold or optional Gumbel-softmax. Determinization simply returns means/expectations instead of sampling.
+
+### class
+* Logic:
+
+ base sets JAX precision (32/64) and declares abstract ops (logical, comparison, rounding, indexing, control, sampling). get_operator_dicts exposes operator name → callable mappings used by the compiler. Each concrete op factory returns a JAX-callable along with a mutable params dict that carries the initialized hyperparameters.
+* Exact vs fuzzy:
+
+ExactLogic wires everything to crisp JAX ops/random samplers (including tfp NegativeBinomial). FuzzyLogic composes the above fuzzy components: OR/exists/not-equal, etc., are built from t-norm + complement; sqrt/div/mod/ceil add small stabilizers; argmin is derived from argmax. Hyperparameters (tnorm, complement, comparison weights, rounding sharpness, sampling strategy, control softness, eps, 64-bit) are configurable via the constructor/string summary.
+
 
 
 # comiler 
@@ -154,6 +177,15 @@ Key Differences
 
 	•	Torch allows richer custom operators and experimental logic not easily supported in JAX.
 
+### in our torch
+we and to do the nural network for thr DRP more modular like here
+Reinforcement Learning (DQN) Tutorial
+https://docs.pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
+
+
+earte file pilicies that contain drp slp 
+
+
 # Simulator 
 
 
@@ -182,12 +214,6 @@ and then
 
 policy_net = DQN(n_observations, n_actions).to(device)
 and train the policy 
-
-Reinforcement Learning (DQN) Tutorial
-https://docs.pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
-c
-
-earte file pilicies that contain drp slp 
 
 
 
