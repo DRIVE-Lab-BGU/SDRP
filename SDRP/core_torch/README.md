@@ -22,6 +22,8 @@ In this packje we have a few main files :
 * Simulator – runs the environment by applying actions to the model and returning the resulting next state & reward  
 * Compiler -  to make the torch "understend" the envarument
 * Planner - to creat a planner and controller
+* Model - Gradient-based learning of unknown RDDL parameters(non-fluents) in JAX.
+* Tuning - Bayesian hyperparameter tuning for JAX planners via rollouts.
 
 ## Train and evaluate Agent
 To to this lets deep into the code:
@@ -203,7 +205,14 @@ Uses JAX+XLA instead of eager NumPy, functional PRNG keys instead of in-place RN
 
 
 # model
-to do cliping to the gra
+implements a JAX-based model-learning pipeline:
+
+it defines loss helpers (MSE, BCE, optax wrappers) and the JaxModelLearner class, which compiles an RDDL domain with gradients (JaxRDDLCompilerWithGrad), maps trainable parameters to non-fluent values (with optional range wrapping), builds a JIT’d batched transition + loss, and runs optax-based gradient descent to fit unknown non-fluents from (state, action, next-state) data streams, tracking training status and exporting a learned RDDLLiftedModel.
+
+# Tuning
+adds a Bayesian-optimization tuner for JAX planners - 
+it defines Hyperparameter (tags with bounds and mapping functions) and JaxParameterTuning, which takes a config template and hyperparameter list(e.g., learning rate, gradient steps, noise scales, rollout counts, horizon, or logic weights.), repeatedly substitutes candidate values, builds/plans with JaxBackpropPlanner, evaluates offline/online returns over multiple trials, and uses multiprocessing plus a GP-based Bayesian optimizer (with optional dashboard logging) to search for the best planner hyperparameters.
+
 
 
 
