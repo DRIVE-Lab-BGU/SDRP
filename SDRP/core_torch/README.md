@@ -13,28 +13,56 @@ git push
 )
 ```
 
-## Packege Turorial ( for me )
+## Packege Turorial 
 ### Overview
-We want to train some againt to solve dome  planing problem( it can work also in rl problem)
-for this task we goona use a new package that base on PyRDDLGym_jax but with a few change:
+We want to train some controller to solve some planing problem, 
+for this task we going use a new package that base on PyRDDLGym_jax but with a few change:
 * this package write use pytorch
 * splite the algorithm for a few more files.
 * __
 * __
+# Code 
+The total code to solve a planing probelm is: 
+```
+import pyRDDLGym
+from pyRDDLGym_jax.core.planner import JaxBackpropPlanner, JaxOfflineController
+env = pyRDDLGym.make("domain", "instance", vectorized=True)
+planner_args, _, train_args = load_config(config_file)
+planner = JaxBackpropPlanner(rddl=env.model, **planner_args)
+controller = JaxOfflineController(planner, **train_args) 
+controller.evaluate(env, episodes=1, verbose=True, render=True)
+env.close()
+```
+lets deep inside the code: 
+
 
 ## Create the environment 
-first we need to create the envitonment of our problem. 
-useing 2 files: 
-* instnace.rddl 
-* domein.rddl \
-the package using this 2  flies by pyRDDLGym.make and create the env. \
-this envitronment is in numpy and also in normal logict (not the fuzzy logic) .
-* pyrddlgym.make -> backend: Type[RDDLSimulator]=RDDLSimulator that defines the logic
+```
+* set up the environment (note the vectorized option must be True)
+env = pyRDDLGym.make("domain", "instance", vectorized=True)
+```
+The first step in training a controller is to construct an environment.
 
-Ater we load the config 
-###  config file (we wnat to change this process)
-This file containe information about:
-* model , optimizer , training 
+This environment is defined using two RDDL files:
+
+domain.rddl — specifies the domain dynamics, predicates, actions, CPFs, constraints, and reward.
+
+instance.rddl — defines a concrete problem instance, including objects and initial state.
+
+These two files are loaded using pyRDDLGym.make, which constructs the environment from the RDDL specification.
+
+The resulting environment operates in NumPy and uses standard (exact) logic, rather than fuzzy logic
+
+###  config file 
+```
+planner_args, _, train_args = load_config(config_file)
+```
+This file containe information about: 
+* Model - Picks logic backend and its hyperparameters.
+
+* Optimizer - Chooses planning method and gradient optimizer settings.
+
+* Training - Sets seeds, epochs, and time budget.
 ```
 [Model]
 logic='FuzzyLogic'
@@ -57,41 +85,32 @@ train_seconds=30
 When we call  JaxBackpropPlanner we need to give him 2 object
   1) rddl=env.model 
   2) **planner_args
-
-## rddl=env.model
-Useing model.py and make the environment to fuzzylogic useing the simulator.py and the comailer.py
-simulator.jax -> JaxRDDLCompiler -> from pyRDDLGym_jax.core.logic import ExactLogic (using line 121)
-
-## **planner_args 
-_______
-
-## Train and evaluate Agent
-To to this lets deep into the code:
-* this code take from the original repo pyRDDLGym_jax 
+## Create the Planner
+instantiates a gradient-based planner
 ```
-import pyRDDLGym
-from pyRDDLGym_jax.core.planner import JaxBackpropPlanner, JaxOfflineController
-
-* set up the environment (note the vectorized option must be True)
-env = pyRDDLGym.make("domain", "instance", vectorized=True)
-
-################ this line dont exists in the orginal code ##################
-* load the config 
-planner_args, _, train_args = load_config(config_file)
-############################################################################3
-
-* create the planning algorithm
 planner = JaxBackpropPlanner(rddl=env.model, **planner_args)
-controller = JaxOfflineController(planner, **train_args)
+```
 
-* evaluate the planner ___
+rddl=env.model: supplies the standard(ExactLogic) RDDL model (with its CPFs); planner_args (from the config) tell JaxBackpropPlanner to compile it into the fuzzy-logic, differentiable version used for planning.
+## Create the Controller $ Train
+```
+controller = JaxOfflineController(planner, **train_args) 
+```
+Creates an offline controller that leverages the planner to select and execute actions while interacting with the environment, using the training settings specified in the config.
+
+## Evaluate 
+```
 controller.evaluate(env, episodes=1, verbose=True, render=True)
 env.close()
-```
+``` 
+Runs the controller (using the planner’s policy) for one episode in the environment with logging/rendering, then closes the environment.
+
+
+
 # Files 
-In this section we present the main files in the pacege 
-## main files 
-In this packege we have a few main files :
+This section provides an overview of the core files in the package and their functionality.
+
+### main files 
 * logic  -  Convert the dynamics from discrete/hybrid to differentiable to make sure we can rollouts the gratient
 * Simulator – runs the environment by applying actions to the model and returning the resulting next state & reward  
 * Compiler -  Translate RDDL AST into JAX transition/reward functions.
@@ -182,15 +201,6 @@ The JaxPlan project compiles RDDL models into symbolic JAX functions.
 Each RDDL expression (CPFs, reward, invariants, conditions) is converted into a JAX 
 
 
-### in our torch
-we and to do the nural network for thr DRP more modular like here
-Reinforcement Learning (DQN) Tutorial
-https://docs.pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
-
-
-earte file pilicies that contain drp slp 
-
-
 ## Simulator 
 
 ### Main Idea
@@ -219,7 +229,14 @@ it defines Hyperparameter (tags with bounds and mapping functions) and JaxParame
 
 
 
-## important thing 
-when we are update the noise we want to get small noise if the gradient is good** 
+# important thing 
+* when we are update the noise we want to get small noise if the gradient is good** 
 and big noise if thr gradient is 0 
 the adam update do something that maybe we want to to repeat the adam in leacuter 6 in deep ari talk about it
+
+* in our torchwe and to do the nural network for thr DRP more modular like here
+Reinforcement Learning (DQN) Tutorial
+https://docs.pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
+earte file pilicies that contain drp slp 
+
+* we need to change the config because we wnat the nn out / and maybe we dont have a tuning 
