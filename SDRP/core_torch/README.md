@@ -24,7 +24,7 @@ In this packege we have a few main files :
 * Planner - to creat a planner and controller
 * Model - Gradient-based learning of unknown RDDL parameters(non-fluents) in JAX.
 * Tuning - Bayesian hyperparameter tuning for JAX planners via rollouts.
-
+* Planner - Gradient-based planning and policy optimization for RDDL in JAX.
 ## Train and evaluate Agent
 To to this lets deep into the code:
 * this code take from the original repo pyRDDLGym_jax 
@@ -112,6 +112,41 @@ RandomSampling interface with two concrete implementations. SoftRandomSampling u
 * Exact vs fuzzy:
 
 ExactLogic wires everything to crisp JAX ops/random samplers (including tfp NegativeBinomial). FuzzyLogic composes the above fuzzy components: OR/exists/not-equal, etc., are built from t-norm + complement; sqrt/div/mod/ceil add small stabilizers; argmin is derived from argmax. Hyperparameters (tnorm, complement, comparison weights, rounding sharpness, sampling strategy, control softness, eps, 64-bit) are configurable via the constructor/string summary.
+
+
+
+# Planner
+
+### Main Idea
+
+Gradient-based planning and policy optimization for RDDL in JAX.
+## Key classes:
+* JaxPlan: \
+abstract planner scaffold for losses, optimization loop, and callbacks.
+* JaxStraightLinePlan: \
+open-loop action sequence optimized via backprop.
+* JaxDeepReactivePolicy: \
+neural policy mapping states to actions; generalizes SLP.
+* GaussianPGPE:\
+ Gaussian parameter-exploring policy gradient estimator for policies/trajectories.
+* JaxBackpropPlanner: \
+orchestrates model compilation, optimization, configs, and training lifecycle.
+* JaxOfflineController:\
+  optimize, then execute the fixed plan offline at deployment.
+* JaxOnlineController:\
+ interleave planning and acting during environment execution.
+* Preprocessor/StaticNormalizer:\
+ormalize and scale actions/states consistently for learning.
+* JaxRDDLCompilerWithGrad:\
+ compile RDDL into differentiable, gradient-enabled JAX graphs.
+
+
+## Main functions:
+* Parses planner configs,
+* compiles differentiable models with JaxRDDLCompilerWithGrad,
+* builds open-loop trajectories (JaxStraightLinePlan) or deep reactive policies  (JaxDeepReactivePolicy) using Haiku/Optax,
+* applies PGPE/optax optimizers,
+* wraps offline/online controllers to optimize then execute plans.
 
 
 
