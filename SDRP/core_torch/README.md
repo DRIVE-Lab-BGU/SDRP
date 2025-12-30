@@ -172,7 +172,7 @@ ormalize and scale actions/states consistently for learning.
  compile RDDL into differentiable, gradient-enabled JAX graphs.
 
 
-## Main functions:
+### Main functions:
 * Parses planner configs,
 * compiles differentiable models with JaxRDDLCompilerWithGrad,
 * builds open-loop trajectories (JaxStraightLinePlan) or deep reactive policies  (JaxDeepReactivePolicy) using Haiku/Optax,
