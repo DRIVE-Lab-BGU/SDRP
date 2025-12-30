@@ -17,10 +17,10 @@ for this task we goona use a new package that base on PyRDDLGym_jax but with a f
 * __
 
 # main files 
-In this packje we have a few main files :
+In this packege we have a few main files :
 * logic  -  Convert the dynamics from discrete/hybrid to differentiable to make sure we can rollouts the gratient
 * Simulator – runs the environment by applying actions to the model and returning the resulting next state & reward  
-* Compiler -  to make the torch "understend" the envarument
+* Compiler -  Translate RDDL AST into JAX transition/reward functions.
 * Planner - to creat a planner and controller
 * Model - Gradient-based learning of unknown RDDL parameters(non-fluents) in JAX.
 * Tuning - Bayesian hyperparameter tuning for JAX planners via rollouts.
@@ -48,7 +48,7 @@ controller = JaxOfflineController(planner, **train_args)
 controller.evaluate(env, episodes=1, verbose=True, render=True)
 env.close()
 ```
-# create the environment 
+# Create the environment 
 first we need to create the envitonment of our problem. 
 useing 2 files: 
 * instnace.rddl 
@@ -116,68 +116,24 @@ ExactLogic wires everything to crisp JAX ops/random samplers (including tfp Nega
 
 
 # comiler 
-JaxPlan Compiler (Original)
+The comiler sets JAX dtypes, initializes values, builds CPF dependency levels, traces objects, and prepares action constraint.
+computation graph that can be:
 
-The JaxPlan project compiles RDDL models into symbolic JAX functions.
-Each RDDL expression (CPFs, reward, invariants, conditions) is converted into a JAX computation graph that can be:
+* optimized by XLA,
 
-	•	optimized by XLA,
+* differentiated with JAX autograd
 
-	•	differentiated with JAX autograd,
+* executed in parallel and batched
 
-	•	executed in parallel and batched,
-
-	•	used for gradient-based planning and optimization.
+* used for gradient-based planning and optimization.
 
 This approach produces very high-performance planning, but relies on static graph compilation and exact logical/arithmetical operators.
 
-Reference:
-Gimelfarb, Taitler, Sanner (ICAPS 2024): JaxPlan and GurobiPlan.
+### Public API
+compile (compile invariants/preconditions/terminations/CPFs/reward), compile_transition (step function with optional constraint checks), compile_rollouts (vectorized rollouts under a policy), print_jax (pretty print compiled graphs), model_parameter_info (hyperparameter metadata).
+The JaxPlan project compiles RDDL models into symbolic JAX functions.
+Each RDDL expression (CPFs, reward, invariants, conditions) is converted into a JAX 
 
-⸻
-
-TorchRDDLCompiler (This Project)
-
-This repository implements a Torch-based compiler for RDDL expressions.
-The design parallels JaxPlan but is built around:
-
-	•	PyTorch, not JAX
-
-	•	Eager execution, not XLA compilation
-
-	•	Configurable logic (ExactLogic or FuzzyLogic), which can be chosen at the simulator level and   not only at the planner level
-
-The compiler translates the RDDL AST into a collection of pure PyTorch callables, enabling:
-	
-    •	differentiable simulators with torch.autograd
-
-	•	full visibility into each step of the transition
-
-    •	continuous/fuzzy logical semantics when desired
-
-	•	integration with custom optimization or RL algorithms
-
-	•	compatibility with Torch-based planning pipelines
-
-This makes the Torch compiler ideal for:
-	•	fuzzy / soft logic modeling
-	•	differentiable optimization of actions
-	•	reinforcement learning research
-	•	hybrid symbolic–gradient planning
-
-⸻
-
-Key Differences
-
-	•	JaxPlan focuses on speed and static compilation.
-
-	•	TorchRDDLCompiler focuses on flexibility, differentiability, and interpretability.
-
-	•	JaxPlan defaults to ExactLogic; Torch allows ExactLogic or FuzzyLogic interchangeably.
-
-	•	JaxPlan hides execution inside compiled XLA graphs; Torch executes line-by-line in Python.
-
-	•	Torch allows richer custom operators and experimental logic not easily supported in JAX.
 
 ### in our torch
 we and to do the nural network for thr DRP more modular like here
