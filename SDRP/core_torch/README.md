@@ -1,4 +1,4 @@
-# SDRP Core Torch README
+#  Core jax README
 
 ## Branch Update Workflow
 ```
