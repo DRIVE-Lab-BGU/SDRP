@@ -223,7 +223,7 @@ orchestrates model compilation, optimization, configs, and training lifecycle.
 * JaxOnlineController:\
  interleave planning and acting during environment execution.
 * Preprocessor/StaticNormalizer:\
-ormalize and scale actions/states consistently for learning.
+ normalize and scale actions/states consistently for learning.
 * JaxRDDLCompilerWithGrad:\
  compile RDDL into differentiable, gradient-enabled JAX graphs.
 
@@ -301,3 +301,97 @@ https://docs.pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
 earte file pilicies that contain drp slp 
 
 * we need to change the config because we wnat the nn out / and maybe we dont have a tuning 
+
+
+# How to work
+## create Simulator and check torch vs jax
+the simulator is takes from pyRDDLGym , the change ti fuzzylogic happen in the planner in the JaxBackpropPlanner.
+
+
+        │
+        ▼
+## create the logic
+he conversion is straightforward.
+check it using a test file, check evrey function (convert)
+
+        │
+        ▼
+## Create simulator file
+handle_error_code - bilud in the comiler (bilud the same way)
+in jax simulator there is a comilpe rddl so :
+
+        │
+        ▼
+## create torch compiler 
+This part is significantly different, because the planner is implemented in PyTorch and all updates are performed eagerly.
+
+
+        │
+        ▼
+## create planner - JaxPlan
+
+        │
+        ▼
+
+## create planner - JaxBackpropPlanner 
+here we wnat to check the simulator after convert to fuzzy logic.
+so create JaxBackpropPlanner 
+and to file test check the simulator.
+
+        │
+        ▼
+## create planner - JaxRDDLCompilerWithGrad
+
+Compiles an RDDL model into fully differentiable transition and reward functions by replacing discrete operations with smooth approximations.
+
+> add the adaptive noise (for now only sd =0 )
+
+Conversion approach:
+
+In the Torch version, all operators are reimplemented using eager PyTorch tensors and autograd, with non-differentiable components handled via detach() where needed.
+
+        │
+        ▼
+## create planner - JaxOfflineController 
+
+Conversion approach:
+
+The Torch version preserves the same control logic, replacing JAX PRNG handling with a Torch generator while keeping all updates eager.
+
+        │
+        ▼
+## create planner - Preprocessor/StaticNormalizer 
+Applies static min–max normalization to state variables based on bounds inferred from the RDDL domain.
+
+Conversion approach:
+
+In Torch, the same normalization logic is implemented with eager tensor operations, without JIT compilation or graph transformations.
+
+        │
+        ▼
+## create planner - JaxOnlineController
+we dont need it?
+
+
+        │
+        ▼
+## create planner - SLP
+Verify this using a test file on several deterministic and stochastic domains.
+
+        │
+        ▼
+## create planner-DRP
+ we wnat the user create the network in this file and the DRP will get the user nn.
+ like here: https://docs.pytorch.org/tutorials/intermediate/reinforcement_q_learning.html 
+
+Verify this using a test file on several deterministic and stochastic domains.
+
+
+
+# Important Notes
+
+>When updating the noise parameters, we want the noise magnitude to adapt to the gradient quality:
+small noise when the gradient signal is strong, and larger noise when the gradient is close to zero.
+This behavior is similar to what Adam implicitly achieves through its adaptive step sizes, and we may want to explicitly replicate the mechanism discussed in Lecture 6 of the Deep ARI course.
+
+>The configuration format needs to be updated: the neural network should be defined externally by the user, and hyperparameter tuning may be disabled or handled separately.
