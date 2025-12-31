@@ -120,7 +120,45 @@ This section provides an overview of the core files in the package and their fun
 * Planner - Gradient-based planning and policy optimization for RDDL in JAX.
 
 ## Flow procces through the package 
-DO
+Here is the end-to-end flow for training a controller with `pyRDDLGym_jax` (this is the reference flow the Torch port mirrors):
+
+```
+domain.rddl + instance.rddl
+        │
+        ▼
+pyRDDLGym.make(..., vectorized=True)  ➜  env.model (RDDL graph)
+        │
+        ▼
+load_config(config_file)
+│        ├─ planner_args  (logic backend, optimizer, horizons…)
+│        └─ train_args    (epochs, time budget, seeds…)
+        │
+        ▼
+JaxBackpropPlanner(rddl=env.model, **planner_args)
+│        ├─ compiles fuzzy/exact models (JaxRDDLCompilerWithGrad / JaxRDDLCompiler)
+│        ├─ builds JaxPlan (default JaxStraightLinePlan: per-step action params)
+│        └─ constructs differentiable rollouts + loss = -utility(returns)
+        │
+        ▼
+JaxOfflineController(planner, **train_args)
+│        └─ train(): planner.optimize(...)
+│              ├─ _jax_init → initialize plan params + optax optimizer state
+│              └─ for each epoch / until time budget:
+│                    loss, log = train_rollouts(...)          # forward pass
+│                    grad = jax.value_and_grad(loss)(...)     # compute ∂loss/∂actions
+│                    updates = optimizer.update(grad, state)
+│                    params = optax.apply_updates(params, updates)
+│                    params = plan.projection(...)/clamp to bounds
+│                    stop on invalid grad / no progress / budget
+        │
+        ▼
+controller.evaluate(env, episodes=..., render=...)
+│        └─ uses learned params via planner.test_policy to act in env
+        ▼
+ summed rewards / stats printed
+```
+
+Gradient update location in code: `SDRP/planner.py:2176-2214` (`JaxBackpropPlanner._jax_update`) where `jax.value_and_grad` computes the gradient and `optax.update/optax.apply_updates` adjust the action parameters, followed by projection to respect action bounds.
 
 
 ## Logic
@@ -232,7 +270,9 @@ it defines Hyperparameter (tags with bounds and mapping functions) and JaxParame
 
 
 
-
+# SDRP
+## introdaction
+## Main idea
 # important thing 
 * when we are update the noise we want to get small noise if the gradient is good** 
 and big noise if thr gradient is 0 
