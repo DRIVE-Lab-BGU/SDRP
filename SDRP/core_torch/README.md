@@ -272,31 +272,6 @@ Gradient update location in code: `SDRP/planner.py:2176-2214` (`JaxBackpropPlann
 
 
 
-# SDRP
-
-## Background
-### Hybrid/Deterministic/stocastic Dynamics
-
-
-### Gradint Step
-#### Rmsprop
-
-###   Exploration vs Exploition
-
-### On policy & Off policy 
-
-#### Non-stationary
-####  Markovian
-#### Non-Markovian (History-dependent)
-#### Stochastic
-#### Deterministic Policy(example)
-#### Stochastic Policy (example)
-### Open loop & Close loop
-
-###
-### 
-## Main idea
-
 # important thing 
 * when we are update the noise we want to get small noise if the gradient is good** 
 and big noise if thr gradient is 0 
