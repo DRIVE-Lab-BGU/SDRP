@@ -25,12 +25,18 @@ for this task we going use a new package that base on PyRDDLGym_jax but with a f
 The total code to solve a planing probelm is: 
 ```
 import pyRDDLGym
-from pyRDDLGym_jax.core.planner import JaxBackpropPlanner, JaxOfflineController
+from pyRDDLGym_jax.core.planner import (JaxBackpropPlanner, JaxOfflineController)
+
 env = pyRDDLGym.make("domain", "instance", vectorized=True)
+
 planner_args, _, train_args = load_config(config_file)
+
 planner = JaxBackpropPlanner(rddl=env.model, **planner_args)
+
 controller = JaxOfflineController(planner, **train_args) 
+
 controller.evaluate(env, episodes=1, verbose=True, render=True)
+
 env.close()
 ```
 lets deep inside the code: 
@@ -38,10 +44,10 @@ lets deep inside the code:
 
 ## Create the environment 
 ```
-* set up the environment (note the vectorized option must be True)
+# set up the environment (note the vectorized option must be True)
 env = pyRDDLGym.make("domain", "instance", vectorized=True)
 ```
-The first step in training a controller is to construct an environment.
+The first step in training the controller is to construct an environment.
 
 This environment is defined using two RDDL files:
 
@@ -82,17 +88,23 @@ epochs=5000
 train_seconds=30
 ```
 
-When we call  JaxBackpropPlanner we need to give him 2 object
-  1) rddl=env.model 
-  2) **planner_args
-## Create the Planner
+
 instantiates a gradient-based planner
+
+## Create the Planner
+
 ```
 planner = JaxBackpropPlanner(rddl=env.model, **planner_args)
 ```
+When we call  JaxBackpropPlanner we need to give him 2 object
+  1) rddl=env.model 
+  2) **planner_args
 
-rddl=env.model: supplies the standard(ExactLogic) RDDL model (with its CPFs); planner_args (from the config) tell JaxBackpropPlanner to compile it into the fuzzy-logic, differentiable version used for planning.
-## Create the Controller $ Train
+
+rddl=env.model: supplies the standard(ExactLogic) RDDL model (with its CPFs, in Numpy)
+
+ planner_args (from the config) - tell JaxBackpropPlanner to compile it into the fuzzy-logic, differentiable version used for planning.
+## Create the Controller & Train
 ```
 controller = JaxOfflineController(planner, **train_args) 
 ```
@@ -112,12 +124,19 @@ This section provides an overview of the core files in the package and their fun
 
 ### main files 
 * logic  -  Convert the dynamics from discrete/hybrid to differentiable to make sure we can rollouts the gratient
+
 * Simulator – runs the environment by applying actions to the model and returning the resulting next state & reward  
+
 * Compiler -  Translate RDDL AST into JAX transition/reward functions.
-* Planner - to creat a planner and controller
-* Model - Gradient-based learning of unknown RDDL parameters(non-fluents) in JAX.
-* Tuning - Bayesian hyperparameter tuning for JAX planners via rollouts.
+
 * Planner - Gradient-based planning and policy optimization for RDDL in JAX.
+
+
+* Model - Gradient-based learning of unknown RDDL parameters
+(non-fluents) in JAX.
+
+* Tuning - Bayesian hyperparameter tuning for JAX planners via rollouts.
+
 
 
 
@@ -141,11 +160,46 @@ RandomSampling interface with two concrete implementations. SoftRandomSampling u
 ### class
 * Logic:
 
- base sets JAX precision (32/64) and declares abstract ops (logical, comparison, rounding, indexing, control, sampling). get_operator_dicts exposes operator name → callable mappings used by the compiler. Each concrete op factory returns a JAX-callable along with a mutable params dict that carries the initialized hyperparameters.
+base sets JAX precision (32/64) and declares abstract ops (logical, comparison, rounding, indexing, control, sampling). 
+get_operator_dicts exposes operator name → callable mappings used by the compiler. Each concrete op factory returns a JAX-callable along with a mutable params dict that carries the initialized hyperparameters.
 * Exact vs fuzzy:
 
-ExactLogic wires everything to crisp JAX ops/random samplers (including tfp NegativeBinomial). FuzzyLogic composes the above fuzzy components: OR/exists/not-equal, etc., are built from t-norm + complement; sqrt/div/mod/ceil add small stabilizers; argmin is derived from argmax. Hyperparameters (tnorm, complement, comparison weights, rounding sharpness, sampling strategy, control softness, eps, 64-bit) are configurable via the constructor/string summary.
+ExactLogic wires everything to crisp JAX ops/random samplers (including tfp NegativeBinomial). FuzzyLogic composes the above 
+fuzzy components: OR/exists/not-equal, etc., are built from t-norm + complement; sqrt/div/mod/ceil add small stabilizers; argmin is derived from argmax. Hyperparameters (tnorm, complement, comparison weights, rounding sharpness, sampling strategy, control softness, eps, 64-bit) are configurable via the constructor/string summary.
 
+
+
+## Simulator 
+
+### Main Idea
+
+
+JaxRDDLSimulator extends RDDLSimulator to support the execution of RDDL domains by compiling CPFs, reward functions, and constraints into JAX-compatible functions, and incorporating additional JAX-specific mechanisms.
+
+### Main functions:
+Compiles CPFs/reward/invariants/preconditions/terminations with JaxRDDLCompiler, JITs them, threads a JAX PRNG key through every call, evaluates CPFs in topological order each step, converts JAX tensors back to grounded state/obs dicts, and samples reward/termination.
+### Differences from the original simulator:
+Uses JAX+XLA instead of eager NumPy, functional PRNG keys instead of in-place RNG, JAX error codes surfaced via handle_error_code instead of immediate Python exceptions, and returns JAX-derived arrays before optional grounding/string conversion.
+
+
+## comiler 
+The comiler sets JAX dtypes, initializes values, builds CPF dependency levels, traces objects, and prepares action constraint.
+computation graph that can be:
+
+* optimized by XLA,
+
+* differentiated with JAX autograd
+
+* executed in parallel and batched
+
+* used for gradient-based planning and optimization.
+
+This approach produces very high-performance planning, but relies on static graph compilation and exact logical/arithmetical operators.
+
+### Public API
+compile (compile invariants/preconditions/terminations/CPFs/reward), compile_transition (step function with optional constraint checks), compile_rollouts (vectorized rollouts under a policy), print_jax (pretty print compiled graphs), model_parameter_info (hyperparameter metadata).
+The JaxPlan project compiles RDDL models into symbolic JAX functions.
+Each RDDL expression (CPFs, reward, invariants, conditions) is converted into a JAX 
 
 
 ## Planner
@@ -181,40 +235,6 @@ ormalize and scale actions/states consistently for learning.
 * applies PGPE/optax optimizers,
 * wraps offline/online controllers to optimize then execute plans.
 
-
-
-## comiler 
-The comiler sets JAX dtypes, initializes values, builds CPF dependency levels, traces objects, and prepares action constraint.
-computation graph that can be:
-
-* optimized by XLA,
-
-* differentiated with JAX autograd
-
-* executed in parallel and batched
-
-* used for gradient-based planning and optimization.
-
-This approach produces very high-performance planning, but relies on static graph compilation and exact logical/arithmetical operators.
-
-### Public API
-compile (compile invariants/preconditions/terminations/CPFs/reward), compile_transition (step function with optional constraint checks), compile_rollouts (vectorized rollouts under a policy), print_jax (pretty print compiled graphs), model_parameter_info (hyperparameter metadata).
-The JaxPlan project compiles RDDL models into symbolic JAX functions.
-Each RDDL expression (CPFs, reward, invariants, conditions) is converted into a JAX 
-
-
-## Simulator 
-
-### Main Idea
-
-JaxRDDLSimulator extends RDDLSimulator to support the execution of RDDL domains by compiling CPFs, reward functions, and constraints into JAX-compatible functions, and incorporating additional JAX-specific mechanisms.
-
-JaxRDDLSimulator extends RDDLSimulator to support the execution of RDDL domains by compiling CPFs, reward functions, and constraints into JAX-compatible functions, and incorporating additional JAX-specific mechanisms.
-
-### Main functions:
-Compiles CPFs/reward/invariants/preconditions/terminations with JaxRDDLCompiler, JITs them, threads a JAX PRNG key through every call, evaluates CPFs in topological order each step, converts JAX tensors back to grounded state/obs dicts, and samples reward/termination.
-### Differences from the original simulator:
-Uses JAX+XLA instead of eager NumPy, functional PRNG keys instead of in-place RNG, JAX error codes surfaced via handle_error_code instead of immediate Python exceptions, and returns JAX-derived arrays before optional grounding/string conversion.
 
 
 
@@ -263,8 +283,6 @@ JaxOfflineController(planner, **train_args)
         ▼
 controller.evaluate(env, episodes=..., render=...)
 │        └─ uses learned params via planner.test_policy to act in env
-        ▼
- summed rewards / stats printed
 ```
 
 Gradient update location in code: `SDRP/planner.py:2176-2214` (`JaxBackpropPlanner._jax_update`) where `jax.value_and_grad` computes the gradient and `optax.update/optax.apply_updates` adjust the action parameters, followed by projection to respect action bounds.
