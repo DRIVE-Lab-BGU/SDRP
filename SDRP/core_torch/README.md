@@ -172,7 +172,7 @@ This section provides an overview of the core files in the package and their fun
 
 * Planner - Gradient-based planning and policy optimization for RDDL in JAX.
 
-
+not necessary?
 * Model - Gradient-based learning of unknown RDDL parameters
 (non-fluents) in JAX.
 
@@ -291,26 +291,9 @@ it defines Hyperparameter (tags with bounds and mapping functions) and JaxParame
 
 
 
-
-
-# important thing 
-* when we are update the noise we want to get small noise if the gradient is good** 
-and big noise if thr gradient is 0 
-the adam update do something that maybe we want to to repeat the adam in leacuter 6 in deep ari talk about it
-
-* in our torchwe and to do the nural network for thr DRP more modular like here
-Reinforcement Learning (DQN) Tutorial
-https://docs.pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
-earte file pilicies that contain drp slp 
-
-* we need to change the config because we wnat the nn out / and maybe we dont have a tuning 
-
-
 # How to work
-## create Simulator and check torch vs jax
-the simulator is takes from pyRDDLGym , the change ti fuzzylogic happen in the planner in the JaxBackpropPlanner.
-
-
+## first i wnat to cinvert the simulator
+First, we convert the simulator from pyRDDLGym. The switch to fuzzy logic is handled in the planner, specifically in JaxBackpropPlanner.
         │
         ▼
 ## create the logic
@@ -319,15 +302,14 @@ check it using a test file, check evrey function (convert)
 
         │
         ▼
-## Create simulator file
-handle_error_code - bilud in the comiler (bilud the same way)
-in jax simulator there is a comilpe rddl so :
+handle_error_code is implemented in the compiler (built in the same way) along with additional utilities.
+In the JAX simulator, the RDDL model is compiled internally as part of the simulator setup.
 
         │
         ▼
 ## create torch compiler 
 This part is significantly different, because the planner is implemented in PyTorch and all updates are performed eagerly.
-
+I am not sure yet how to do this.
 
         │
         ▼
@@ -337,7 +319,8 @@ This part is significantly different, because the planner is implemented in PyTo
         ▼
 
 ## create planner - JaxBackpropPlanner 
-here we wnat to check the simulator after convert to fuzzy logic.
+here we wnat to check the simulator after convert to fuzzy logic. 
+
 so create JaxBackpropPlanner 
 and to file test check the simulator.
 
@@ -347,7 +330,8 @@ and to file test check the simulator.
 
 Compiles an RDDL model into fully differentiable transition and reward functions by replacing discrete operations with smooth approximations.
 
-> add the adaptive noise (for now only sd =0 )
+> add the adaptive noise (for now only sd =0 ) or
+ in the offline controller
 
 Conversion approach:
 
@@ -372,8 +356,6 @@ In Torch, the same normalization logic is implemented with eager tensor operatio
 
         │
         ▼
-## create planner - JaxOnlineController
-we dont need it?
 
 
         │
@@ -388,6 +370,11 @@ Verify this using a test file on several deterministic and stochastic domains.
  like here: https://docs.pytorch.org/tutorials/intermediate/reinforcement_q_learning.html 
 
 Verify this using a test file on several deterministic and stochastic domains.
+
+        │
+        ▼
+## create planner - JaxOnlineController
+we dont need it?
 
 
 
