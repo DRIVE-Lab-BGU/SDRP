@@ -118,6 +118,47 @@ env.close()
 Runs the controller (using the planner’s policy) for one episode in the environment with logging/rendering, then closes the environment.
 
 
+## Flow procces through the package 
+Here is the end-to-end flow for training a controller with `pyRDDLGym_jax`:
+
+```
+domain.rddl + instance.rddl
+        │
+        ▼
+pyRDDLGym.make(..., vectorized=True)  ➜  env.model (RDDL graph)
+        │
+        │
+        │                         load_config(config_file)
+        │                               │      ├─ planner_args  (logic backend, │optimizer, horizons…)
+        │                               │      └─ train_args    (epochs, time │ budget, seeds…)
+        │                               │
+        ▼                               ▼ 
+JaxBackpropPlanner(rddl=env.model, **planner_args)
+│        ├─ compiles fuzzy/exact models (JaxRDDLCompilerWithGrad / JaxRDDLCompiler)
+│        ├─ builds JaxPlan (default JaxStraightLinePlan: per-step action params)
+│        └─ constructs differentiable rollouts + loss = -utility(returns)
+        │                     
+        │                  load_config(config_file)  
+        │                          │
+        │                          │
+        ▼                          ▼               
+JaxOfflineController(planner, **train_args)
+│        └─ train(): planner.optimize(...)
+│              ├─ _jax_init → initialize plan params + optax optimizer state
+│              └─ for each epoch / until time budget:
+│                    loss, log = train_rollouts(...)          # forward pass
+│                    grad = jax.value_and_grad(loss)(...)     # compute ∂loss/∂actions
+│                    updates = optimizer.update(grad, state)
+│                    params = optax.apply_updates(params, updates)
+│                    params = plan.projection(...)/clamp to bounds
+        │
+        ▼
+controller.evaluate(env, episodes=..., render=...)
+│        └─ uses learned params via planner.test_policy to act in env
+```
+
+Gradient update location in code: `SDRP/planner.py:2176-2214` (`JaxBackpropPlanner._jax_update`) where `jax.value_and_grad` computes the gradient and `optax.update/optax.apply_updates` adjust the action parameters, followed by projection to respect action bounds.
+
 
 # Files 
 This section provides an overview of the core files in the package and their functionality.
@@ -248,44 +289,6 @@ it defines loss helpers (MSE, BCE, optax wrappers) and the JaxModelLearner class
 adds a Bayesian-optimization tuner for JAX planners - 
 it defines Hyperparameter (tags with bounds and mapping functions) and JaxParameterTuning, which takes a config template and hyperparameter list(e.g., learning rate, gradient steps, noise scales, rollout counts, horizon, or logic weights.), repeatedly substitutes candidate values, builds/plans with JaxBackpropPlanner, evaluates offline/online returns over multiple trials, and uses multiprocessing plus a GP-based Bayesian optimizer (with optional dashboard logging) to search for the best planner hyperparameters.
 
-
-## Flow procces through the package 
-Here is the end-to-end flow for training a controller with `pyRDDLGym_jax`:
-
-```
-domain.rddl + instance.rddl
-        │
-        ▼
-pyRDDLGym.make(..., vectorized=True)  ➜  env.model (RDDL graph)
-        │
-        ▼
-load_config(config_file)
-│        ├─ planner_args  (logic backend, optimizer, horizons…)
-│        └─ train_args    (epochs, time budget, seeds…)
-        │
-        ▼
-JaxBackpropPlanner(rddl=env.model, **planner_args)
-│        ├─ compiles fuzzy/exact models (JaxRDDLCompilerWithGrad / JaxRDDLCompiler)
-│        ├─ builds JaxPlan (default JaxStraightLinePlan: per-step action params)
-│        └─ constructs differentiable rollouts + loss = -utility(returns)
-        │
-        ▼
-JaxOfflineController(planner, **train_args)
-│        └─ train(): planner.optimize(...)
-│              ├─ _jax_init → initialize plan params + optax optimizer state
-│              └─ for each epoch / until time budget:
-│                    loss, log = train_rollouts(...)          # forward pass
-│                    grad = jax.value_and_grad(loss)(...)     # compute ∂loss/∂actions
-│                    updates = optimizer.update(grad, state)
-│                    params = optax.apply_updates(params, updates)
-│                    params = plan.projection(...)/clamp to bounds
-        │
-        ▼
-controller.evaluate(env, episodes=..., render=...)
-│        └─ uses learned params via planner.test_policy to act in env
-```
-
-Gradient update location in code: `SDRP/planner.py:2176-2214` (`JaxBackpropPlanner._jax_update`) where `jax.value_and_grad` computes the gradient and `optax.update/optax.apply_updates` adjust the action parameters, followed by projection to respect action bounds.
 
 
 
