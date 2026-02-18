@@ -70,7 +70,7 @@ def main():
     # This is just a demo of conversion utilities (does not step an env).
     sim = Simulator(env=None)
 
-    obs_np = {'rlevel': np.array([ 64.42717, 129.9572 ], dtype=np.float32)}
+    obs_np = {'release': np.array([17.89675 , 15.712295], dtype=np.float32)}
     obs_t = sim.array2torch(obs_np)
     print("Converted to torch:", obs_t)
 
