@@ -11,6 +11,8 @@ import os
 from pyRDDLGym.core.simulator import RDDLSimulator
 from pyRDDLGym.core.env import RDDLEnv
 from pyRDDLGym.core.compiler.model import RDDLLiftedModel
+from pyRDDLGym.core.compiler.model import RDDLPlanningModel
+
 
 # TODO:
 # 1. init 
@@ -27,10 +29,35 @@ x = torch.tensor([114.4, 21.4], requires_grad=True)
 # print(x.grad)
 
 class Simulator(RDDLSimulator):
-    def __init__(self, env: RDDLSimulator, device: str = 'cpu'):
+    def __init__(self, env: RDDLEnv, device: str = 'cpu') :
+        
+
+        # # read and parse domain and instance
+        # if isinstance(domain, RDDLLiftedModel):
+        #     self.model = domain
+        # else:
+        #     reader = RDDLReader(domain, instance)
+        #     domain = reader.rddltxt
+        #     parser = RDDLParser(lexer=None, verbose=False)
+        #     parser.build()
+        #     rddl = parser.parse(domain)
+        #     self.model = RDDLLiftedModel(rddl)
+        #         # define the RDDL model        
+        # self.horizon = self.model.horizon
+        # self.discount = self.model.discount
+        # self.max_allowed_actions = self.model.max_allowed_actions 
+        #     # define the simulation backend  
+        # self.sampler = RDDLSimulator(self.model,
+        #                        logger=self.logger,
+        #                        keep_tensors=self.vectorized) 
+           
+
+        ##  DDLSimulator  ##
         self.env = env
+        #####################
         self.device = device
         self.state = None  # Initialize state to None
+
     def array2torch(self, action_observation):
         """Convert numpy array to torch tensor."""
         if isinstance(action_observation, dict):
@@ -51,23 +78,30 @@ class Simulator(RDDLSimulator):
         action = self.env.action_space.sample()
         return action
     
-    def sample_reward(self):
-        """Sample a reward from the environment's reward space."""
-        reward = self.env.sample_reward()
-        if isinstance(reward, dict):
-            return {k: torch.tensor(v, dtype=torch.float32, device=self.device) for k, v in reward.items()}
-        else:
-            return torch.tensor(reward, dtype=torch.float32, device=self.device)    
-
+    # def sample_reward(self):
+    #     """Sample a reward from the environment's reward space."""
+    #     reward = self.env.
+    #     return reward
 
     def sample_observation(self):
         """Sample an observation from the environment's observation space."""
         observation = self.env.observation_space.sample()
         return observation
     
-    def step(self, action):
+    def torch_cpfs(self, cpfs):
+        """Convert CPFs to torch tensors,i must to do in i need to gradient the cpfs.
+        but how do i do it?
+        is an just words
         
-        pass
+        """
+
+
+    def step(self, action):
+        """Perform a step in the environment with the given action."""
+
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        return obs, reward, terminated, truncated, info
+    
 
     def reset(self):
         # Reset the environment and return the initial state
@@ -99,6 +133,7 @@ def main():
         instance=instance_rddl,
         vectorized=True
     )
+    
     ##############################################################################################
     
     
@@ -133,21 +168,30 @@ def main():
     print(f'Observation as numpy array from torch: {y_np}')
     
 
+    print("################################## Step ##########################################")
+    # Step the environment with the sampled action
+    obs, reward, terminated, truncated, info = sim.step(an_action)
+    print(f'Observation after step: {obs}')
+    print(f'Reward after step: {reward}')  
+    print(f'Terminated after step: {terminated}')
+    print(f'Truncated after step: {truncated}')
+    print(f'Info after step: {info}')
 
 
-    print("################################## reward ##########################################")
-    an_reward = sim.sample_reward()
-    print(f'Sample reward from the environment: {an_reward}')
+
+    # print("################################## reward ##########################################")
+    # an_reward = sim.sample_reward()
+    # print(f'Sample reward from the environment: {an_reward}')
 
 
 
-    print(f'Sample reward from the environment: {an_reward}')
-    # Convert the reward to a torch tensor
-    z = sim.array2torch(an_reward)
-    print(f'Reward as torch tensor: {z}')
-    # return z to a numpy array
-    z_np = sim.torch2array(z)
-    print(f'Reward as numpy array from torch: {z_np}')
+    # print(f'Sample reward from the environment: {an_reward}')
+    # #Convert the reward to a torch tensor
+    # z = sim.array2torch(an_reward)
+    # print(f'Reward as torch tensor: {z}')
+    # # return z to a numpy array
+    # z_np = sim.torch2array(z)
+    # print(f'Reward as numpy array from torch: {z_np}')
 
 
 
