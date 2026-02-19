@@ -98,7 +98,10 @@ class Simulator(RDDLSimulator):
 
     def step(self, action):
         """Perform a step in the environment with the given action."""
-
+        import compiler 
+    
+        dynamic = compiler.TorchRDDLCompiler(self.env.model, sd=0.0, use64bit=False)
+        
         obs, reward, terminated, truncated, info = self.env.step(action)
         return obs, reward, terminated, truncated, info
     
