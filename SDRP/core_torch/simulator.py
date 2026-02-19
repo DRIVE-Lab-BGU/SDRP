@@ -170,7 +170,7 @@ def main():
     y_np = sim.torch2array(y)
     print(f'Observation as numpy array from torch: {y_np}')
     
-
+    exit()
     print("################################## Step ##########################################")
     # Step the environment with the sampled action
     obs, reward, terminated, truncated, info = sim.step(an_action)

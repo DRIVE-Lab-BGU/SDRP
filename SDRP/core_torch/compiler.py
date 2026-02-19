@@ -32,7 +32,7 @@ class TorchRDDLCompiler:
     ERROR_CODES = {'NORMAL': 0}
 
     def __init__(self, rddl: RDDLLiftedModel,
-                 sd: float,
+                 sd: float = 0.0,
                  logger: Optional[Logger]=None,
                  python_functions: Optional[Dict[str, Callable]]=None,
                  use64bit: bool=False,
@@ -54,11 +54,10 @@ class TorchRDDLCompiler:
             >>> compiler = TorchRDDLCompiler(rddl_model, use64bit=True)
             >>> compiler.compile()
         """
-        if isinstance(rddl, RDDLLiftedModel):
-            self.rddl = rddl
-            print("Using provided RDDLLiftedModel.")
-        else:
+        if not isinstance(rddl, RDDLLiftedModel):
             raise ValueError("rddl must be an instance of RDDLLiftedModel.")
+        self.rddl = rddl
+        print("Using provided RDDLLiftedModel.")
         self.logger = logger
         self.python_functions = python_functions or {}
         self.sd = sd
@@ -78,6 +77,11 @@ class TorchRDDLCompiler:
             'bool': torch.bool
         }
 
+        # compile initial values
+        # its in numpy
+        initializer = RDDLValueInitializer(rddl)
+        self.init_values = initializer.initialize()
+        
         self.init_values: Dict[str, torch.Tensor] = {}
         self.cpfs: Dict[str, CallableExpr] = {}
         self.reward: CallableExpr | None = None
@@ -130,7 +134,22 @@ class TorchRDDLCompiler:
 
         self.reward = self._torch(self.rddl.reward, init_params, dtype=self.REAL)
         self.model_params = init_params
-
+    def convert2torch(self, value):
+        """Recursively convert numpy arrays in the value to torch tensors."""
+        if isinstance(value, dict):
+            return {k: self.convert2torch(v) for k, v in value.items()}
+        elif isinstance(value, np.ndarray):
+            return torch.tensor(value, dtype=self.TORCH_TYPES.get(str(value.dtype), self.REAL))
+        else:
+            return value
+    def convert2numpy(self, value):
+        """Recursively convert torch tensors in the value to numpy arrays."""
+        if isinstance(value, dict):
+            return {k: self.convert2numpy(v) for k, v in value.items()}
+        elif isinstance(value, torch.Tensor):
+            return value.cpu().numpy()
+        else:
+            return value
 
     # ------------------------------------------------------------------
     def compile_transition(self ,cache_path_info: bool=False ) -> CallableExpr:
@@ -139,15 +158,16 @@ class TorchRDDLCompiler:
             self.reward, self.cpfs, self.preconditions, self.invariants, self.terminations
         
 
-
+        
 
         def _jorch_wrapped_single_step(key , actions ,subs , model_params):
                 # subs is the current state, 
                 # model_params is the dict of parameters that can be updated by cpfs,
                 #  key is the random generator key for sampling
                 # conver the action to torch 
-                actions = simulator.conver2torch(actions, self.device)
-                actions = actions + torch.normal(0,self.sd) # add noise to actions for exploration
+                actions = self.convert2torch(actions)
+                ###. make the noise as class
+                #actions = actions + torch.normal(0,self.sd) # add noise to actions for exploration
                 subs.update(actions)
                 
                 #here we move the cpf evaluation to the simulator step function, 
@@ -1484,25 +1504,38 @@ from pyRDDLGym.core.compiler.model import RDDLLiftedModel
 def main():
 
     base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    print(base_path)
     domain_path   = os.path.join(base_path, "instances", "reservoir", "domain.rddl")
     instance_path = os.path.join(base_path, "instances", "reservoir", "instance_1.rddl")
-    print(f'-----------domain_path: {domain_path}, instance_path: {instance_path}')
+    #print(f'-----------domain_path: {domain_path}, instance_path: {instance_path}')
     from pyRDDLGym.core.parser.reader import RDDLReader
+    from pyRDDLGym.core.parser.parser import RDDLParser
     from pyRDDLGym.core.compiler.model import RDDLLiftedModel
 
     reader = RDDLReader(domain_path, instance_path)
-    ast = reader.rddl  
-    model = RDDLLiftedModel(ast)
+    domain = reader.rddltxt
+  
+    parser = RDDLParser(lexer=None, verbose=False)
+    parser.build()
+    rddl = parser.parse(domain)
+
+    model = RDDLLiftedModel(rddl)
+
+    # print(f'discount: {model.discount}, horizon: {model.horizon}, cpfs: {model.cpfs.keys()}')
+    # print(" #######. cpfs ##########")
+    # print(f'initial state: {model.cpfs}')
+    # print(" #######. reward ##########")
+    # print(f'reward: {model.reward}')
+    # print("Parsed model successfully.")
     
-    
-    exit()
+
         
     # --- compile torch ---
     compiler = TorchRDDLCompiler(model, sd=0.0, use64bit=False)
 
 
 
-    print("num cpfs:", len(compiler.cpfs))
+    print("num cpfs:", compiler.cpfs)
     print("init values keys:", list(compiler.init_values.keys())[:20])
     
     print("Compiling model...")
