@@ -138,9 +138,10 @@ class TorchRDDLCompiler:
         """Recursively convert numpy arrays in the value to torch tensors."""
         if isinstance(value, dict):
             return {k: self.convert2torch(v) for k, v in value.items()}
-        elif isinstance(value, np.ndarray):
+        elif  not isinstance(value, torch.Tensor):
             return torch.tensor(value, dtype=self.TORCH_TYPES.get(str(value.dtype), self.REAL))
         else:
+            print(type(value))
             return value
     def convert2numpy(self, value):
         """Recursively convert torch tensors in the value to numpy arrays."""

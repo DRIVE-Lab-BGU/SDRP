@@ -77,7 +77,10 @@ key_torch = torch.Generator().manual_seed(0)
 subs_torch = dict(torch_compiler.init_values)
 actions = {'release': jnp.array([  23., 10  ], dtype=jnp.float32)} 
 model_params = {}  # Example model parameters (if needed)
+checkiftensor = torch_compiler.convert2torch(actions)
+print(f'Is the converted action a torch tensor? {isinstance(checkiftensor, torch.Tensor)}')
 
+exit()
 subs_torch, log, model_params=fn_step_torch(key, actions, subs, model_params)
 print(subs_torch)
 
