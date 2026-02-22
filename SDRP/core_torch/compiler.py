@@ -1,13 +1,11 @@
 """Torch-native RDDL compiler producing differentiable PyTorch callables."""
 
 from __future__ import annotations
-import os
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
-
 import numpy as np
+
 import torch
 
-from initializer_torch import RDDLValueInitializer
 from pyRDDLGym.core.compiler.levels import RDDLLevelAnalysis
 from pyRDDLGym.core.compiler.model import RDDLLiftedModel
 from pyRDDLGym.core.compiler.tracer import RDDLObjectsTracer
@@ -17,8 +15,14 @@ from pyRDDLGym.core.debug.exception import (
     RDDLUndefinedVariableError
 )
 from pyRDDLGym.core.debug.logger import Logger
-import simulator
-from logic import ExactLogic, FuzzyLogic
+
+try:
+    from .initializer_torch import RDDLValueInitializer
+    from .logic import ExactLogic, FuzzyLogic
+except ImportError:
+    # Fallback for direct-script execution.
+    from initializer_torch import RDDLValueInitializer
+    from logic import ExactLogic, FuzzyLogic
 
 Args = Dict[str, Any]
 # explanation: Callable that takes (subs, params, key) and returns (value, key, error_code, params)
@@ -77,11 +81,9 @@ class TorchRDDLCompiler:
             'bool': torch.bool
         }
 
-        # compile initial values
+        # compile initial values in torch tensors
         initializer = RDDLValueInitializer(rddl)
-        self.init_values = initializer.initialize()
-        
-        self.init_values: Dict[str, torch.Tensor] = {}
+        self.init_values: Dict[str, torch.Tensor] = initializer.initialize()
         self.cpfs: Dict[str, CallableExpr] = {}
         self.reward: CallableExpr | None = None
         self.invariants: List[CallableExpr] = []
@@ -133,80 +135,79 @@ class TorchRDDLCompiler:
 
         self.reward = self._torch(self.rddl.reward, init_params, dtype=self.REAL)
         self.model_params = init_params
-    def convert2torch(self, value):
-        """Recursively convert numpy arrays in the value to torch tensors."""
-        if isinstance(value, dict):
-            return {k: self.convert2torch(v) for k, v in value.items()}
-        elif  not isinstance(value, torch.Tensor):
-            return torch.tensor(value, dtype=self.TORCH_TYPES.get(str(value.dtype), self.REAL))
-        else:
-            print(type(value))
-            return value
-    def convert2numpy(self, value):
-        """Recursively convert torch tensors in the value to numpy arrays."""
-        if isinstance(value, dict):
-            return {k: self.convert2numpy(v) for k, v in value.items()}
-        elif isinstance(value, torch.Tensor):
-            return value.cpu().numpy()
-        else:
-            return value
 
     # ------------------------------------------------------------------
-    def compile_transition(self ,cache_path_info: bool=False ) -> CallableExpr:
+    def compile_transition(self, cache_path_info: bool=False) -> CallableExpr:
         rddl = self.rddl
-        reward_fn, cpfs, preconds, invariants, terminals = \
-            self.reward, self.cpfs, self.preconditions, self.invariants, self.terminations
-        
+        reward_fn = self.reward
+        cpfs = self.cpfs
+        preconds = self.preconditions
+        invariants = self.invariants
+        terminals = self.terminations
 
-        
+        if reward_fn is None:
+            raise RuntimeError('compile() must be called before compile_transition().')
 
-        def _jorch_wrapped_single_step(key , actions ,subs , model_params):
-                # subs is the current state, 
-                # model_params is the dict of parameters that can be updated by cpfs,
-                #  key is the random generator key for sampling
-                # conver the action to torch 
-                actions = self.convert2torch(actions)
-                ###. make the noise as class
-                #actions = actions + torch.normal(0,self.sd) # add noise to actions for exploration
-                subs.update(actions)
-                
-                #here we move the cpf evaluation to the simulator step function, 
-                # so that we can update the state in place and 
-                # avoid copying tensors back and forth between the compiler and simulator
-                for (name, cpf) in cpfs.items():
-                    subs[name], key, err, model_params = cpf(subs, model_params, key)
-                    errors |= err
+        def _to_bool(value: Any) -> bool:
+            tensor = self._ensure_tensor(value)
+            if isinstance(tensor, torch.Tensor):
+                return bool(torch.all(tensor.bool()).item())
+            return bool(tensor)
 
-                reward, key, err, model_params = reward_fn(subs, model_params, key)
+        def _torch_wrapped_single_step(key, actions, subs, model_params):
+            errors = self.ERROR_CODES['NORMAL']
+
+            # actions = actions + torch.normal(0, self.sd)  # optional exploration noise
+            subs.update(actions)
+
+            for (name, cpf) in cpfs.items():
+                value, key, err, model_params = cpf(subs, model_params, key)
+                subs[name] = value
                 errors |= err
 
-                # calculate fluent values
-                if cache_path_info:
-                    fluents = {name: values for (name, values) in subs.items() 
-                           if name not in rddl.non_fluents}
-                else:
-                    fluents = {}
-                
-                # set the next state to the current state
-                for (state, next_state) in rddl.next_state.items():
-                    subs[state] = subs[next_state]
-            
-                # prepare the return value
-                log = {
-                    'fluents': fluents,
-                    'reward': reward,
-                    'error': errors
-                    #'precondition': precond_check,
-                    #'invariant': invariant_check,
-                    #'termination': terminated_check
-                }            
-                # if constraint_func:
-                #     log['inequalities'] = inequalities
-                #     log['equalities'] = equalities
-                    
-                return subs, log, model_params
-        
-        return _jorch_wrapped_single_step
+            reward, key, err, model_params = reward_fn(subs, model_params, key)
+            errors |= err
+
+            for (state, next_state) in rddl.next_state.items():
+                subs[state] = subs[next_state]
+
+            precondition_check = True
+            for precond in preconds:
+                sample, key, err, model_params = precond(subs, model_params, key)
+                precondition_check = precondition_check and _to_bool(sample)
+                errors |= err
+
+            invariant_check = True
+            for invariant in invariants:
+                sample, key, err, model_params = invariant(subs, model_params, key)
+                invariant_check = invariant_check and _to_bool(sample)
+                errors |= err
+
+            terminated_check = False
+            for terminal in terminals:
+                sample, key, err, model_params = terminal(subs, model_params, key)
+                terminated_check = terminated_check or _to_bool(sample)
+                errors |= err
+
+            if cache_path_info:
+                fluents = {
+                    name: values for (name, values) in subs.items()
+                    if name not in rddl.non_fluents
+                }
+            else:
+                fluents = {}
+
+            log = {
+                'fluents': fluents,
+                'reward': reward,
+                'error': errors,
+                'precondition': precondition_check,
+                'invariant': invariant_check,
+                'termination': terminated_check
+            }
+            return subs, log, model_params
+
+        return _torch_wrapped_single_step
     # ------------------------------------------------------------------
 
     # ------------------------------------------------------------------
@@ -1398,9 +1399,8 @@ class TorchRDDLCompiler:
             >>> list(cpfs.keys())
         """
         torch_cpfs = {}
-        for cpfs in self.levels.values():
-            print(f'Compiling CPFs: {cpfs}')
-            for cpf in cpfs:
+        for level in sorted(self.levels.keys()):
+            for cpf in self.levels[level]:
                 _, expr = self.rddl.cpfs[cpf]
                 prange = self.rddl.variable_ranges[cpf]
                 dtype = self.TORCH_TYPES.get(prange, self.INT)
@@ -1502,86 +1502,3 @@ class TorchRDDLCompilerWithGrad(TorchRDDLCompiler):
     """Gradient-aware compiler placeholder (shares implementation)."""
 
     pass
-import os
-import torch
-
-from pyRDDLGym.core.parser.reader import RDDLReader
-from pyRDDLGym.core.compiler.model import RDDLLiftedModel
-
-
-
-
-def main():
-
-    base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    print(base_path)
-    domain_path   = os.path.join(base_path, "instances", "reservoir", "domain.rddl")
-    instance_path = os.path.join(base_path, "instances", "reservoir", "instance_1.rddl")
-    #print(f'-----------domain_path: {domain_path}, instance_path: {instance_path}')
-    from pyRDDLGym.core.parser.reader import RDDLReader
-    from pyRDDLGym.core.parser.parser import RDDLParser
-    from pyRDDLGym.core.compiler.model import RDDLLiftedModel
-
-    reader = RDDLReader(domain_path, instance_path)
-    domain = reader.rddltxt
-  
-    parser = RDDLParser(lexer=None, verbose=False)
-    parser.build()
-    rddl = parser.parse(domain)
-
-    model = RDDLLiftedModel(rddl)
-
-    # print(f'discount: {model.discount}, horizon: {model.horizon}, cpfs: {model.cpfs.keys()}')
-    # print(" #######. cpfs ##########")
-    # print(f'initial state: {model.cpfs}')
-    # print(" #######. reward ##########")
-    # print(f'reward: {model.reward}')
-    # print("Parsed model successfully.")
-    
-
-        
-    # --- compile torch ---
-    compiler = TorchRDDLCompiler(model, sd=0.0, use64bit=False)
-    initializer = RDDLValueInitializer(rddl)
-    print("Initializing values...")
-    compiler.init_values = initializer.initialize()
-
-    exit( )
-    print("num cpfs:", compiler.cpfs)
-    print("init values keys:", list(compiler.init_values.keys())[:20])
-    
-    print("Compiling model...")
-
-  
-    subs = compiler.init_values.copy()
-    exit()
-    actions = {"release": torch.zeros_like(subs["release"])}
-
-    next_subs, log, params = step_fn(None, actions, subs, compiler.model_params)
-    print(log)
-    exit()
-    compiler.device = torch.device("cpu")
-    compiler.compile()
-
-    step_fn = compiler.compile_transition(cache_path_info=True)
-
-    # --- initial subs ---
-    subs = {k: (v.clone() if isinstance(v, torch.Tensor) else v)
-            for k, v in compiler.init_values.items()}
-
-    # --- zero actions ---
-    action_names = list(getattr(model, "action_fluents", {}).keys())
-    actions = {'release': tensor([ 86.6543, 121.2381])}
-
-    key = torch.Generator(device="cpu").manual_seed(0)
-    model_params = compiler.model_params
-
-    next_subs, log, model_params = step_fn(key, actions, subs, model_params)
-
-    print("reward:", log["reward"])
-    print("error:", log["error"])
-    print("some fluents:", list(log["fluents"].keys())[:10])
-
-
-if __name__ == "__main__":
-    main()
