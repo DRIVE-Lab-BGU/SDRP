@@ -1,6 +1,7 @@
 """Torch-native RDDL compiler producing differentiable PyTorch callables."""
 
 from __future__ import annotations
+import os
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -16,8 +17,8 @@ from pyRDDLGym.core.debug.exception import (
     RDDLUndefinedVariableError
 )
 from pyRDDLGym.core.debug.logger import Logger
-
-from .logic import ExactLogic, FuzzyLogic
+import simulator
+from logic import ExactLogic, FuzzyLogic
 
 Args = Dict[str, Any]
 # explanation: Callable that takes (subs, params, key) and returns (value, key, error_code, params)
@@ -31,6 +32,7 @@ class TorchRDDLCompiler:
     ERROR_CODES = {'NORMAL': 0}
 
     def __init__(self, rddl: RDDLLiftedModel,
+                 sd: float = 0.0,
                  logger: Optional[Logger]=None,
                  python_functions: Optional[Dict[str, Callable]]=None,
                  use64bit: bool=False,
@@ -52,9 +54,13 @@ class TorchRDDLCompiler:
             >>> compiler = TorchRDDLCompiler(rddl_model, use64bit=True)
             >>> compiler.compile()
         """
+        if not isinstance(rddl, RDDLLiftedModel):
+            raise ValueError("rddl must be an instance of RDDLLiftedModel.")
         self.rddl = rddl
+        print("Using provided RDDLLiftedModel.")
         self.logger = logger
         self.python_functions = python_functions or {}
+        self.sd = sd
         backend = logic or fuzzy_logic
         if backend is None:
             backend = ExactLogic(use64bit=use64bit)
@@ -71,9 +77,14 @@ class TorchRDDLCompiler:
             'bool': torch.bool
         }
 
+        # compile initial values
+        # its in numpy
+        initializer = RDDLValueInitializer(rddl)
+        self.init_values = initializer.initialize()
+        
         self.init_values: Dict[str, torch.Tensor] = {}
         self.cpfs: Dict[str, CallableExpr] = {}
-        self.reward: Optional[CallableExpr] = None
+        self.reward: CallableExpr | None = None
         self.invariants: List[CallableExpr] = []
         self.preconditions: List[CallableExpr] = []
         self.terminations: List[CallableExpr] = []
@@ -98,6 +109,7 @@ class TorchRDDLCompiler:
             >>> compiler.compile(log_expr=True, heading='SIM')
             >>> compiler.cpfs['next_state']  # torch callable
         """
+
         initializer = RDDLValueInitializer(self.rddl, logger=self.logger)
         init_values_np = initializer.initialize()
         self.init_values = self._tensorize_structure(init_values_np)
@@ -111,19 +123,92 @@ class TorchRDDLCompiler:
         init_params: Dict[str, Any] = {}
         self.model_params = init_params
 
-        self.invariants = [self._torch(expr, init_params)
+        self.invariants = [self._torch(expr, init_params, dtype=torch.bool)
                            for expr in self.rddl.invariants]
-        self.preconditions = [self._torch(expr, init_params)
+        self.preconditions = [self._torch(expr, init_params, dtype=torch.bool)
                               for expr in self.rddl.preconditions]
-        self.terminations = [self._torch(expr, init_params)
+        self.terminations = [self._torch(expr, init_params, dtype=torch.bool)
                              for expr in self.rddl.terminations]
+        
         self.cpfs = self._compile_cpfs(init_params)
-        self.reward = self._torch(self.rddl.reward, init_params)
 
-    def compile_transition(self, *args, **kwargs):
-        """Stub kept for compatibility with the planner interface."""
-        raise NotImplementedError(
-            'Transition compilation for planning is not yet implemented.')
+        self.reward = self._torch(self.rddl.reward, init_params, dtype=self.REAL)
+        self.model_params = init_params
+    def convert2torch(self, value):
+        """Recursively convert numpy arrays in the value to torch tensors."""
+        if isinstance(value, dict):
+            return {k: self.convert2torch(v) for k, v in value.items()}
+        elif  not isinstance(value, torch.Tensor):
+            return torch.tensor(value, dtype=self.TORCH_TYPES.get(str(value.dtype), self.REAL))
+        else:
+            print(type(value))
+            return value
+    def convert2numpy(self, value):
+        """Recursively convert torch tensors in the value to numpy arrays."""
+        if isinstance(value, dict):
+            return {k: self.convert2numpy(v) for k, v in value.items()}
+        elif isinstance(value, torch.Tensor):
+            return value.cpu().numpy()
+        else:
+            return value
+
+    # ------------------------------------------------------------------
+    def compile_transition(self ,cache_path_info: bool=False ) -> CallableExpr:
+        rddl = self.rddl
+        reward_fn, cpfs, preconds, invariants, terminals = \
+            self.reward, self.cpfs, self.preconditions, self.invariants, self.terminations
+        
+
+        
+
+        def _jorch_wrapped_single_step(key , actions ,subs , model_params):
+                # subs is the current state, 
+                # model_params is the dict of parameters that can be updated by cpfs,
+                #  key is the random generator key for sampling
+                # conver the action to torch 
+                actions = self.convert2torch(actions)
+                ###. make the noise as class
+                #actions = actions + torch.normal(0,self.sd) # add noise to actions for exploration
+                subs.update(actions)
+                
+                #here we move the cpf evaluation to the simulator step function, 
+                # so that we can update the state in place and 
+                # avoid copying tensors back and forth between the compiler and simulator
+                for (name, cpf) in cpfs.items():
+                    subs[name], key, err, model_params = cpf(subs, model_params, key)
+                    errors |= err
+
+                reward, key, err, model_params = reward_fn(subs, model_params, key)
+                errors |= err
+
+                # calculate fluent values
+                if cache_path_info:
+                    fluents = {name: values for (name, values) in subs.items() 
+                           if name not in rddl.non_fluents}
+                else:
+                    fluents = {}
+                
+                # set the next state to the current state
+                for (state, next_state) in rddl.next_state.items():
+                    subs[state] = subs[next_state]
+            
+                # prepare the return value
+                log = {
+                    'fluents': fluents,
+                    'reward': reward,
+                    'error': errors
+                    #'precondition': precond_check,
+                    #'invariant': invariant_check,
+                    #'termination': terminated_check
+                }            
+                # if constraint_func:
+                #     log['inequalities'] = inequalities
+                #     log['equalities'] = equalities
+                    
+                return subs, log, model_params
+        
+        return _jorch_wrapped_single_step
+    # ------------------------------------------------------------------
 
     # ------------------------------------------------------------------
     # Expression dispatch
@@ -165,6 +250,10 @@ class TorchRDDLCompiler:
             fn = self._torch_control(expr, init_params)
         elif etype == 'randomvar':
             fn = self._torch_random(expr, init_params)
+        elif etype == 'randomvector':
+            fn = self._torch_random_vector(expr, init_params)
+        elif etype == 'matrix':
+            fn = self._torch_matrix(expr, init_params)
         else:
             raise RDDLNotImplementedError(
                 f'Expression type {etype} is not supported.\n' + print_stack_trace(expr))
@@ -172,7 +261,8 @@ class TorchRDDLCompiler:
         if dtype is not None:
             def _cast(subs, params, key):
                 value, key, err, params = fn(subs, params, key)
-                return value.to(dtype), key, err, params
+                tensor = self._ensure_tensor(value)
+                return tensor.to(dtype), key, err, params
             return _cast
         return fn
 
@@ -362,7 +452,7 @@ class TorchRDDLCompiler:
         """
         if not isinstance(lhs, torch.Tensor):
             try:
-                lhs = torch.as_tensor(lhs)
+                lhs = torch.as_tensor(lhs, dtype=self.REAL)
             except Exception:
                 lhs = torch.tensor(0.0, dtype=self.REAL)
         if not isinstance(rhs, torch.Tensor):
@@ -370,6 +460,25 @@ class TorchRDDLCompiler:
                 rhs = torch.as_tensor(rhs, dtype=lhs.dtype)
             except Exception:
                 rhs = torch.tensor(0.0, dtype=lhs.dtype)
+
+        # align ranks
+        while lhs.dim() < rhs.dim():
+            lhs = lhs.unsqueeze(0)
+        while rhs.dim() < lhs.dim():
+            rhs = rhs.unsqueeze(0)
+
+        # try to align leading batch dimension if mismatched
+        if lhs.dim() > 0 and rhs.dim() > 0 and lhs.shape[0] != rhs.shape[0]:
+            target = max(lhs.shape[0], rhs.shape[0])
+            if lhs.shape[0] != target:
+                if lhs.shape[0] != 1:
+                    lhs = lhs.unsqueeze(0)
+                lhs = lhs.expand((target,) + lhs.shape[1:])
+            if rhs.shape[0] != target:
+                if rhs.shape[0] != 1:
+                    rhs = rhs.unsqueeze(0)
+                rhs = rhs.expand((target,) + rhs.shape[1:])
+
         if self.logic is not None and hasattr(self.logic, name):
             op = getattr(self.logic, name)
             return op(lhs, rhs) if callable(op) else op
@@ -378,7 +487,28 @@ class TorchRDDLCompiler:
         if name == 'sub':
             return torch.sub(lhs, rhs)
         if name == 'mul':
-            return torch.mul(lhs, rhs)
+            try:
+                return torch.mul(lhs, rhs)
+            except RuntimeError:
+                # heuristic broadcasting to align batch/object dims
+                if lhs.dim() == 1 and rhs.dim() == 1 and lhs.shape[0] != rhs.shape[0]:
+                    lhs = lhs.unsqueeze(-1)
+                    rhs = rhs.unsqueeze(0)
+                # pad smaller rank tensor with trailing singleton dims
+                while lhs.dim() < rhs.dim():
+                    lhs = lhs.unsqueeze(-1)
+                while rhs.dim() < lhs.dim():
+                    rhs = rhs.unsqueeze(-1)
+                try:
+                    lhs_b, rhs_b = torch.broadcast_tensors(lhs, rhs)
+                    return torch.mul(lhs_b, rhs_b)
+                except Exception:
+                    if lhs.dim() == 2 and rhs.dim() == 2:
+                        lhs = lhs.unsqueeze(-1)  # (b,n)->(b,n,1) or (n,n)->(n,n,1)
+                        rhs = rhs.unsqueeze(0)   # (n,n)->(1,n,n)
+                        lhs_b, rhs_b = torch.broadcast_tensors(lhs, rhs)
+                        return torch.mul(lhs_b, rhs_b)
+                    return torch.mul(lhs, rhs)
         if name == 'div':
             return torch.div(lhs, rhs)
         if name == 'pow':
@@ -470,6 +600,8 @@ class TorchRDDLCompiler:
         if axes is None:
             axes = tuple(range(tensor.dim()))
         axes = tuple(axes) if isinstance(axes, (list, tuple)) else (axes,)
+        if not isinstance(tensor, torch.Tensor):
+            tensor = torch.tensor(bool(tensor))
         result = tensor
         for axis in sorted(axes, reverse=True):
             if axis is None:
@@ -597,7 +729,10 @@ class TorchRDDLCompiler:
         if len(args) == 1 and op == '~':
             def _not(subs, params, key):
                 value, key, err, params = args[0](subs, params, key)
-                return self._apply_unary('logical_not', value.bool()), key, err, params
+                tensor = self._ensure_tensor(value)
+                if not isinstance(tensor, torch.Tensor):
+                    tensor = torch.tensor(bool(tensor))
+                return self._apply_unary('logical_not', tensor.bool()), key, err, params
             return _not
 
         if len(args) < 2:
@@ -607,10 +742,16 @@ class TorchRDDLCompiler:
 
         def _fn(subs, params, key):
             value, key, err, params = args[0](subs, params, key)
-            value = value.bool()
+            tensor = self._ensure_tensor(value)
+            if not isinstance(tensor, torch.Tensor):
+                tensor = torch.tensor(bool(tensor))
+            value = tensor.bool()
             for arg_fn in args[1:]:
                 rhs, key, err_rhs, params = arg_fn(subs, params, key)
-                rhs = rhs.bool()
+                rhs_tensor = self._ensure_tensor(rhs)
+                if not isinstance(rhs_tensor, torch.Tensor):
+                    rhs_tensor = torch.tensor(bool(rhs_tensor))
+                rhs = rhs_tensor.bool()
                 err |= err_rhs
                 if op in {'^', '&'}:
                     value = self._apply_binary('logical_and', value, rhs)
@@ -716,8 +857,18 @@ class TorchRDDLCompiler:
             >>> compiler._apply_function_unary('sqrt', torch.tensor(4.))
             tensor(2.)
         """
+        # simple override for ops that in logic expect init_params (e.g., sgn)
+        if op == 'sgn':
+            tensor = self._ensure_tensor(value)
+            if not isinstance(tensor, torch.Tensor):
+                tensor = torch.as_tensor(tensor, dtype=self.REAL)
+            return torch.sign(tensor)
         if self.logic is not None and hasattr(self.logic, op):
-            return getattr(self.logic, op)(value)
+            try:
+                return getattr(self.logic, op)(value)
+            except TypeError:
+                # logic op expects (id, init_params); fall back to torch op below
+                pass
         funcs = {
             'abs': torch.abs,
             'exp': torch.exp,
@@ -886,57 +1037,339 @@ class TorchRDDLCompiler:
     # ------------------------------------------------------------------
 
     def _torch_random(self, expr, init_params) -> CallableExpr:
-        """Compile sampling primitives so they emit deterministic tensors.
-
-        Args:
-            expr: Random variable AST node.
-            init_params: Compilation parameters.
-
-        Returns:
-            CallableExpr: Callable that samples using torch RNGs.
-
-        Example:
-            >>> fn = compiler._torch_random(expr, {})
-            >>> sample, key, err, params = fn(subs, {}, torch.Generator())
-        """
+        """Compile random variable AST nodes into Torch samplers."""
         _, name = expr.etype
-        args = [self._torch(arg, init_params) for arg in expr.args]
+
+        if name in {'Discrete', 'UnnormDiscrete'}:
+            ordered_args = self.traced.cached_sim_info(expr)
+            arg_fns = [self._torch(arg, init_params) for arg in ordered_args]
+        elif name in {'Discrete(p)', 'UnnormDiscrete(p)'}:
+            _, args = expr.args
+            arg, = args
+            arg_fns = [self._torch(arg, init_params)]
+        else:
+            arg_fns = [self._torch(arg, init_params) for arg in expr.args]
 
         def _fn(subs, params, key):
             values = []
             total_err = self.ERROR_CODES['NORMAL']
-            for fn in args:
-                val, key, err, params = fn(subs, params, key)
-                values.append(val)
+            for arg_fn in arg_fns:
+                val, key, err, params = arg_fn(subs, params, key)
+                values.append(self._ensure_tensor(val))
                 total_err |= err
-            generator = self._ensure_generator(key, values[0].device if values else torch.device('cpu'))
-            if name == 'Uniform':
-                low, high = torch.broadcast_tensors(values[0], values[1])
-                rand = torch.rand(high.shape, generator=generator,
-                                  device=high.device, dtype=self.REAL)
-                sample = low + (high - low) * rand
-            elif name == 'Normal':
-                mean, var = torch.broadcast_tensors(values[0], values[1])
-                std = torch.sqrt(torch.clamp(var, min=1e-8))
-                eps = torch.randn(mean.shape, generator=generator,
-                                  device=mean.device, dtype=self.REAL)
-                sample = mean + std * eps
-            elif name == 'Exponential':
-                scale = values[0]
-                rand = torch.rand(scale.shape, generator=generator,
-                                  device=scale.device, dtype=self.REAL)
-                sample = -scale * torch.log(torch.clamp(rand, min=1e-8))
-            elif name == 'Bernoulli':
-                probs = torch.clamp(values[0], 0.0, 1.0)
-                rand = torch.rand(probs.shape, generator=generator,
-                                  device=probs.device, dtype=self.REAL)
-                sample = (rand <= probs).to(dtype=self.REAL)
-            else:
-                raise RDDLNotImplementedError(
-                    f'Random variable {name} is not supported.\n' + print_stack_trace(expr))
+            device = values[0].device if values else torch.device('cpu')
+            generator = self._ensure_generator(key, device)
+            sample = self._sample_random_variable(name, values, generator, expr)
             return sample, generator, total_err, params
 
         return _fn
+
+    def _sample_random_variable(self, name: str, values: List[torch.Tensor],
+                                generator: torch.Generator, expr) -> torch.Tensor:
+        if name == 'KronDelta':
+            sample = values[0].to(dtype=self.INT)
+        elif name == 'DiracDelta':
+            sample = values[0].to(dtype=self.REAL)
+        elif name == 'Uniform':
+            low, high = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
+            rand = torch.rand(high.shape, generator=generator, device=high.device, dtype=self.REAL)
+            sample = low + (high - low) * rand
+        elif name == 'Normal':
+            mean, var = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
+            std = torch.sqrt(torch.clamp(var, min=1e-8))
+            eps = torch.randn(mean.shape, generator=generator, device=mean.device, dtype=self.REAL)
+            sample = mean + std * eps
+        elif name == 'Poisson':
+            rate = torch.clamp(values[0].to(self.REAL), min=0.0)
+            sample = torch.poisson(rate, generator=generator).to(dtype=self.INT)
+        elif name == 'Exponential':
+            scale = torch.clamp(values[0].to(self.REAL), min=1e-8)
+            rand = torch.rand(scale.shape, generator=generator, device=scale.device, dtype=self.REAL)
+            sample = -scale * torch.log(torch.clamp(rand, min=1e-8))
+        elif name == 'Weibull':
+            shape, scale = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
+            shape = torch.clamp(shape, min=1e-8)
+            scale = torch.clamp(scale, min=1e-8)
+            rand = torch.rand(scale.shape, generator=generator, device=scale.device, dtype=self.REAL)
+            sample = scale * torch.pow(-torch.log1p(-torch.clamp(rand, max=1.0 - 1e-8)), 1.0 / shape)
+        elif name == 'Bernoulli':
+            probs = torch.clamp(values[0].to(self.REAL), 0.0, 1.0)
+            rand = torch.rand(probs.shape, generator=generator, device=probs.device, dtype=self.REAL)
+            sample = (rand <= probs).to(dtype=self.REAL)
+        elif name == 'Gamma':
+            shape, scale = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
+            shape = torch.clamp(shape, min=1e-8)
+            scale = torch.clamp(scale, min=1e-8)
+            dist = torch.distributions.Gamma(concentration=shape, rate=1.0 / scale)
+            sample = dist.sample()
+        elif name == 'Binomial':
+            trials, prob = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
+            trials = torch.clamp(trials, min=0.0)
+            prob = torch.clamp(prob, 0.0, 1.0)
+            dist = torch.distributions.Binomial(total_count=trials, probs=prob)
+            sample = dist.sample().to(dtype=self.INT)
+        elif name == 'NegativeBinomial':
+            trials, prob = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
+            trials = torch.clamp(trials, min=1e-8)
+            prob = torch.clamp(prob, 0.0, 1.0)
+            # keep pyRDDLGym_jax convention: failures before `trials` successes
+            dist = torch.distributions.NegativeBinomial(total_count=trials, probs=1.0 - prob)
+            sample = dist.sample().to(dtype=self.INT)
+        elif name == 'Beta':
+            a, b = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
+            a = torch.clamp(a, min=1e-8)
+            b = torch.clamp(b, min=1e-8)
+            dist = torch.distributions.Beta(a, b)
+            sample = dist.sample()
+        elif name == 'Geometric':
+            prob = torch.clamp(values[0].to(self.REAL), min=1e-8, max=1.0 - 1e-8)
+            dist = torch.distributions.Geometric(probs=prob)
+            sample = dist.sample().to(dtype=self.INT)
+        elif name == 'Pareto':
+            shape, scale = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
+            shape = torch.clamp(shape, min=1e-8)
+            scale = torch.clamp(scale, min=1e-8)
+            dist = torch.distributions.Pareto(scale=scale, alpha=shape)
+            sample = dist.sample()
+        elif name == 'Student':
+            df = torch.clamp(values[0].to(self.REAL), min=1e-8)
+            dist = torch.distributions.StudentT(df=df)
+            sample = dist.sample()
+        elif name == 'Gumbel':
+            mean, scale = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
+            scale = torch.clamp(scale, min=1e-8)
+            dist = torch.distributions.Gumbel(loc=mean, scale=scale)
+            sample = dist.sample()
+        elif name == 'Laplace':
+            mean, scale = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
+            scale = torch.clamp(scale, min=1e-8)
+            dist = torch.distributions.Laplace(loc=mean, scale=scale)
+            sample = dist.sample()
+        elif name == 'Cauchy':
+            mean, scale = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
+            scale = torch.clamp(scale, min=1e-8)
+            dist = torch.distributions.Cauchy(loc=mean, scale=scale)
+            sample = dist.sample()
+        elif name == 'Gompertz':
+            shape, scale = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
+            shape = torch.clamp(shape, min=1e-8)
+            scale = torch.clamp(scale, min=1e-8)
+            rand = torch.rand(scale.shape, generator=generator, device=scale.device, dtype=self.REAL)
+            inner = 1.0 - torch.log1p(-torch.clamp(rand, max=1.0 - 1e-8)) / shape
+            sample = torch.log(torch.clamp(inner, min=1e-8)) / scale
+        elif name == 'ChiSquare':
+            df = torch.clamp(values[0].to(self.REAL), min=1e-8)
+            dist = torch.distributions.Chi2(df=df)
+            sample = dist.sample()
+        elif name == 'Kumaraswamy':
+            a, b = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
+            a = torch.clamp(a, min=1e-8)
+            b = torch.clamp(b, min=1e-8)
+            rand = torch.rand(a.shape, generator=generator, device=a.device, dtype=self.REAL)
+            sample = torch.pow(1.0 - torch.pow(rand, 1.0 / b), 1.0 / a)
+        elif name in {'Discrete', 'UnnormDiscrete'}:
+            prob = torch.stack([val.to(self.REAL) for val in values], dim=-1)
+            if name == 'UnnormDiscrete':
+                normalizer = torch.sum(prob, dim=-1, keepdim=True)
+                prob = prob / torch.clamp(normalizer, min=1e-12)
+            sample = self._sample_discrete(prob, generator)
+        elif name in {'Discrete(p)', 'UnnormDiscrete(p)'}:
+            prob = values[0].to(self.REAL)
+            if name == 'UnnormDiscrete(p)':
+                normalizer = torch.sum(prob, dim=-1, keepdim=True)
+                prob = prob / torch.clamp(normalizer, min=1e-12)
+            sample = self._sample_discrete(prob, generator)
+        else:
+            raise RDDLNotImplementedError(
+                f'Random variable {name} is not supported.\n' + print_stack_trace(expr))
+        return sample
+
+    def _sample_discrete(self, prob: torch.Tensor, generator: torch.Generator) -> torch.Tensor:
+        prob = torch.clamp(prob, min=0.0).to(dtype=self.REAL)
+        if prob.dim() == 0:
+            return torch.zeros((), dtype=self.INT, device=prob.device)
+        if prob.shape[-1] == 0:
+            return torch.zeros(prob.shape[:-1], dtype=self.INT, device=prob.device)
+        normalizer = torch.sum(prob, dim=-1, keepdim=True)
+        uniform = torch.full_like(prob, 1.0 / float(prob.shape[-1]))
+        prob = torch.where(normalizer > 0, prob / torch.clamp(normalizer, min=1e-12), uniform)
+        flat = prob.reshape(-1, prob.shape[-1])
+        sampled = torch.multinomial(flat, num_samples=1, replacement=True, generator=generator)
+        sampled = sampled.squeeze(-1).reshape(prob.shape[:-1])
+        return sampled.to(dtype=self.INT)
+
+    # ------------------------------------------------------------------
+    # Random vectors
+    # ------------------------------------------------------------------
+
+    def _torch_random_vector(self, expr, init_params) -> CallableExpr:
+        _, name = expr.etype
+        if name == 'MultivariateNormal':
+            return self._torch_multivariate_normal(expr, init_params)
+        if name == 'MultivariateStudent':
+            return self._torch_multivariate_student(expr, init_params)
+        if name == 'Dirichlet':
+            return self._torch_dirichlet(expr, init_params)
+        if name == 'Multinomial':
+            return self._torch_multinomial(expr, init_params)
+        raise RDDLNotImplementedError(
+            f'Distribution {name} is not supported.\n' + print_stack_trace(expr))
+
+    def _torch_multivariate_normal(self, expr, init_params) -> CallableExpr:
+        _, args = expr.args
+        mean, cov = args
+        mean_fn = self._torch(mean, init_params)
+        cov_fn = self._torch(cov, init_params)
+        index, = self.traced.cached_sim_info(expr)
+
+        def _fn(subs, params, key):
+            mean_val, key, err1, params = mean_fn(subs, params, key)
+            cov_val, key, err2, params = cov_fn(subs, params, key)
+            mean_t = self._ensure_tensor(mean_val).to(self.REAL)
+            cov_t = self._ensure_tensor(cov_val).to(self.REAL)
+            generator = self._ensure_generator(key, mean_t.device)
+            z = torch.randn(mean_t.shape + (1,), generator=generator,
+                            device=mean_t.device, dtype=self.REAL)
+            chol = torch.linalg.cholesky(cov_t)
+            sample = torch.matmul(chol, z)[..., 0] + mean_t
+            sample = torch.movedim(sample, source=-1, destination=index)
+            return sample, generator, err1 | err2, params
+
+        return _fn
+
+    def _torch_multivariate_student(self, expr, init_params) -> CallableExpr:
+        _, args = expr.args
+        mean, cov, df = args
+        mean_fn = self._torch(mean, init_params)
+        cov_fn = self._torch(cov, init_params)
+        df_fn = self._torch(df, init_params)
+        index, = self.traced.cached_sim_info(expr)
+
+        def _fn(subs, params, key):
+            mean_val, key, err1, params = mean_fn(subs, params, key)
+            cov_val, key, err2, params = cov_fn(subs, params, key)
+            df_val, key, err3, params = df_fn(subs, params, key)
+            mean_t = self._ensure_tensor(mean_val).to(self.REAL)
+            cov_t = self._ensure_tensor(cov_val).to(self.REAL)
+            df_t = torch.clamp(self._ensure_tensor(df_val).to(self.REAL), min=1e-8)
+            df_expand = df_t[..., None, None].expand(mean_t.shape + (1,))
+            z = torch.distributions.StudentT(df=df_expand).sample()
+            chol = torch.linalg.cholesky(cov_t)
+            sample = torch.matmul(chol, z)[..., 0] + mean_t
+            sample = torch.movedim(sample, source=-1, destination=index)
+            return sample, key, err1 | err2 | err3, params
+
+        return _fn
+
+    def _torch_dirichlet(self, expr, init_params) -> CallableExpr:
+        _, args = expr.args
+        alpha, = args
+        alpha_fn = self._torch(alpha, init_params)
+        index, = self.traced.cached_sim_info(expr)
+
+        def _fn(subs, params, key):
+            alpha_val, key, err, params = alpha_fn(subs, params, key)
+            alpha_t = torch.clamp(self._ensure_tensor(alpha_val).to(self.REAL), min=1e-8)
+            sample = torch.distributions.Dirichlet(concentration=alpha_t).sample()
+            sample = torch.movedim(sample, source=-1, destination=index)
+            return sample, key, err, params
+
+        return _fn
+
+    def _torch_multinomial(self, expr, init_params) -> CallableExpr:
+        _, args = expr.args
+        trials, prob = args
+        trials_fn = self._torch(trials, init_params)
+        prob_fn = self._torch(prob, init_params)
+        index, = self.traced.cached_sim_info(expr)
+
+        def _fn(subs, params, key):
+            trials_val, key, err1, params = trials_fn(subs, params, key)
+            prob_val, key, err2, params = prob_fn(subs, params, key)
+            total_count = torch.clamp(self._ensure_tensor(trials_val).to(self.REAL), min=0.0)
+            prob_t = torch.clamp(self._ensure_tensor(prob_val).to(self.REAL), min=0.0)
+            normalizer = torch.sum(prob_t, dim=-1, keepdim=True)
+            prob_t = prob_t / torch.clamp(normalizer, min=1e-12)
+            try:
+                sample = torch.distributions.Multinomial(total_count=total_count, probs=prob_t).sample()
+            except Exception:
+                generator = self._ensure_generator(key, prob_t.device)
+                flat_prob = prob_t.reshape(-1, prob_t.shape[-1])
+                flat_count = total_count.reshape(-1)
+                rows = []
+                for i in range(flat_prob.shape[0]):
+                    count = max(0, int(round(float(flat_count[i].item()))))
+                    if count == 0:
+                        row = torch.zeros_like(flat_prob[i])
+                    else:
+                        idx = torch.multinomial(flat_prob[i], count, replacement=True,
+                                                generator=generator)
+                        row = torch.bincount(idx, minlength=flat_prob.shape[-1]).to(self.REAL)
+                    rows.append(row)
+                sample = torch.stack(rows, dim=0).reshape(prob_t.shape)
+            sample = sample.to(dtype=self.INT)
+            sample = torch.movedim(sample, source=-1, destination=index)
+            return sample, key, err1 | err2, params
+
+        return _fn
+
+    # ------------------------------------------------------------------
+    # Matrix algebra
+    # ------------------------------------------------------------------
+
+    def _torch_matrix(self, expr, init_params) -> CallableExpr:
+        _, op = expr.etype
+        if op == 'det':
+            return self._torch_matrix_det(expr, init_params)
+        if op == 'inverse':
+            return self._torch_matrix_inv(expr, init_params, pseudo=False)
+        if op == 'pinverse':
+            return self._torch_matrix_inv(expr, init_params, pseudo=True)
+        if op == 'cholesky':
+            return self._torch_matrix_cholesky(expr, init_params)
+        raise RDDLNotImplementedError(
+            f'Matrix operation {op} is not supported.\n' + print_stack_trace(expr))
+
+    def _torch_matrix_det(self, expr, init_params) -> CallableExpr:
+        *_, arg = expr.args
+        arg_fn = self._torch(arg, init_params)
+
+        def _fn(subs, params, key):
+            sample_arg, key, error, params = arg_fn(subs, params, key)
+            sample = torch.linalg.det(sample_arg.to(self.REAL))
+            return sample, key, error, params
+
+        return _fn
+
+    def _torch_matrix_inv(self, expr, init_params, pseudo: bool) -> CallableExpr:
+        _, arg = expr.args
+        arg_fn = self._torch(arg, init_params)
+        indices = self.traced.cached_sim_info(expr)
+        op = torch.linalg.pinv if pseudo else torch.linalg.inv
+
+        def _fn(subs, params, key):
+            sample_arg, key, error, params = arg_fn(subs, params, key)
+            sample = op(sample_arg.to(self.REAL))
+            sample = torch.movedim(sample, source=(-2, -1), destination=indices)
+            return sample, key, error, params
+
+        return _fn
+
+    def _torch_matrix_cholesky(self, expr, init_params) -> CallableExpr:
+        _, arg = expr.args
+        arg_fn = self._torch(arg, init_params)
+        indices = self.traced.cached_sim_info(expr)
+
+        def _fn(subs, params, key):
+            sample_arg, key, error, params = arg_fn(subs, params, key)
+            sample = torch.linalg.cholesky(sample_arg.to(self.REAL))
+            sample = torch.movedim(sample, source=(-2, -1), destination=indices)
+            return sample, key, error, params
+
+        return _fn
+
+
+
 
     # ------------------------------------------------------------------
     # CPF / Reward compilation
@@ -955,12 +1388,17 @@ class TorchRDDLCompiler:
             >>> cpfs = compiler._compile_cpfs({})
             >>> list(cpfs.keys())
         """
-        cpfs: Dict[str, CallableExpr] = {}
-        for cpfs_in_level in self.levels.values():
-            for cpf in cpfs_in_level:
+        torch_cpfs = {}
+        for cpfs in self.levels.values():
+            print(f'Compiling CPFs: {cpfs}')
+            for cpf in cpfs:
                 _, expr = self.rddl.cpfs[cpf]
-                cpfs[cpf] = self._torch(expr, init_params)
-        return cpfs
+                prange = self.rddl.variable_ranges[cpf]
+                dtype = self.TORCH_TYPES.get(prange, self.INT)
+                torch_cpfs[cpf] = self._torch(expr, init_params, dtype=dtype)
+        return torch_cpfs
+
+
 
     # ------------------------------------------------------------------
     # Utility helpers
@@ -1055,3 +1493,84 @@ class TorchRDDLCompilerWithGrad(TorchRDDLCompiler):
     """Gradient-aware compiler placeholder (shares implementation)."""
 
     pass
+import os
+import torch
+
+from pyRDDLGym.core.parser.reader import RDDLReader
+from pyRDDLGym.core.compiler.model import RDDLLiftedModel
+
+
+
+
+def main():
+
+    base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    print(base_path)
+    domain_path   = os.path.join(base_path, "instances", "reservoir", "domain.rddl")
+    instance_path = os.path.join(base_path, "instances", "reservoir", "instance_1.rddl")
+    #print(f'-----------domain_path: {domain_path}, instance_path: {instance_path}')
+    from pyRDDLGym.core.parser.reader import RDDLReader
+    from pyRDDLGym.core.parser.parser import RDDLParser
+    from pyRDDLGym.core.compiler.model import RDDLLiftedModel
+
+    reader = RDDLReader(domain_path, instance_path)
+    domain = reader.rddltxt
+  
+    parser = RDDLParser(lexer=None, verbose=False)
+    parser.build()
+    rddl = parser.parse(domain)
+
+    model = RDDLLiftedModel(rddl)
+
+    # print(f'discount: {model.discount}, horizon: {model.horizon}, cpfs: {model.cpfs.keys()}')
+    # print(" #######. cpfs ##########")
+    # print(f'initial state: {model.cpfs}')
+    # print(" #######. reward ##########")
+    # print(f'reward: {model.reward}')
+    # print("Parsed model successfully.")
+    
+
+        
+    # --- compile torch ---
+    compiler = TorchRDDLCompiler(model, sd=0.0, use64bit=False)
+
+
+
+    print("num cpfs:", compiler.cpfs)
+    print("init values keys:", list(compiler.init_values.keys())[:20])
+    
+    print("Compiling model...")
+
+  
+    subs = compiler.init_values.copy()
+    exit()
+    actions = {"release": torch.zeros_like(subs["release"])}
+
+    next_subs, log, params = step_fn(None, actions, subs, compiler.model_params)
+    print(log)
+    exit()
+    compiler.device = torch.device("cpu")
+    compiler.compile()
+
+    step_fn = compiler.compile_transition(cache_path_info=True)
+
+    # --- initial subs ---
+    subs = {k: (v.clone() if isinstance(v, torch.Tensor) else v)
+            for k, v in compiler.init_values.items()}
+
+    # --- zero actions ---
+    action_names = list(getattr(model, "action_fluents", {}).keys())
+    actions = {'release': tensor([ 86.6543, 121.2381])}
+
+    key = torch.Generator(device="cpu").manual_seed(0)
+    model_params = compiler.model_params
+
+    next_subs, log, model_params = step_fn(key, actions, subs, model_params)
+
+    print("reward:", log["reward"])
+    print("error:", log["error"])
+    print("some fluents:", list(log["fluents"].keys())[:10])
+
+
+if __name__ == "__main__":
+    main()

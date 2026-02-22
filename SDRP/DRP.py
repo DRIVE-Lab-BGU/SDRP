@@ -27,6 +27,8 @@ import time
 
 
 from importlib.metadata import version, PackageNotFoundError
+
+import torch
 # from pyRDDLGym_jax.core.planner import (
 # from SDRP.Planner import
 from planner import (
@@ -42,12 +44,12 @@ from planner import (
 ###############################################
 
 base_path = os.path.dirname(os.path.abspath(__file__))
-
+print(f'base_path: {base_path}')
 ##################
 #### for run  ####
 ##################
-instance = "instance_4.rddl"
-problem = "race_car"
+instance = "instance_1.rddl"
+problem = "reservoir"
 sd_for_stoc = 0
 pass_for_save = f"log_{instance[0:-5]}_sd = {sd_for_stoc}_problem:{problem}.csv"
 
@@ -73,16 +75,36 @@ instance_file = os.path.join(base_path, "instances", problem, instance)
 myEnv = pyRDDLGym.make(domain=domain_file,
                      instance=instance_file,
                      vectorized=True)
+exit()
+#print(f' ##########################################{myEnv.action_space}###########################################')
 
 
+#print(f' ##########################################{myEnv.domain_text}###########################################')
+#print(f' ##########################################{myEnv.instance_text}###########################################')
+#print(f' ##########################################{myEnv.model}###########################################')
+#print(f' ##########################################{myEnv.horizon}###########################################')
+#print(f' ##########################################{myEnv.observation_space}###########################################')
+#print(f' ##########################################{myEnv.action_space}###########################################')
+# print(f' ##########################################{myEnv.state}###########################################')
+#print(f'action space ##########################################{myEnv.action_space}###########################################')
+#print(f'sampler ##########################################{myEnv.action_space.sample()}###########################################')
+
+action = {'release': np.array([91.873985, 50.822758], dtype=np.float32)}
+#print(f" ##########################################{type(myEnv.step(action))}###########################################")
+as_tuple = myEnv.action_space.sample()
+print(f" observation ##########################################{as_tuple}###########################################")
+exit()
+as_torch = torch.tensor(as_tuple, dtype=torch.float32)
+print(f"as tuple ##########################################{as_tuple}###########################################")
+print(f"as torch ##########################################{as_torch}###########################################")
+print(f"as torch shape ##########################################{as_torch.shape}###########################################")
+print(f"as torch dtype ##########################################{as_torch.dtype}###########################################")
 # Create the planner for differentiable planning
-
+exit()
 config_file = os.path.join(base_path, "configs", "Reservoir_DRP.cfg")
 planner_args, _, train_args = load_config(config_file)
 planner = JaxBackpropPlanner(rddl=myEnv.model, **planner_args)
 agent=  JaxOfflineController(planner, **train_args, epochs = 10 , sd=sd_for_stoc)
-
-
 
 exit()
 # The agent wraps the planner and executes training/evaluation

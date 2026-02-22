@@ -193,12 +193,10 @@ class SoftRounding(Rounding):
 
     
     def floor(self, id, init_params):
-        id_ = str(id)
-        init_params[id_] = self.weight  # stored to keep params mutable across calls
-
+        """Soft floor that does not rely on mutable init_params keys."""
         def _torch_wrapped_calc_floor_approx(x, params):
             x_t = torch.as_tensor(x)
-            param = torch.as_tensor(params[id_], dtype=x_t.dtype, device=x_t.device)
+            param = torch.as_tensor(self.weight, dtype=x_t.dtype, device=x_t.device)
             denom = torch.tanh(param / 4.0)
             floor = (torch.sigmoid(param * (x_t - torch.floor(x_t) - 1.0)) -
                      torch.sigmoid(-param / 2.0)) / denom + torch.floor(x_t)
@@ -207,12 +205,10 @@ class SoftRounding(Rounding):
         return _torch_wrapped_calc_floor_approx
 
     def round(self, id, init_params):
-        id_ = str(id)
-        init_params[id_] = self.weight  # stored to keep params mutable across calls
-
+        """Soft round that does not rely on mutable init_params keys."""
         def _torch_wrapped_calc_round_approx(x, params):
             x_t = torch.as_tensor(x)
-            param = torch.as_tensor(params[id_], dtype=x_t.dtype, device=x_t.device)
+            param = torch.as_tensor(self.weight, dtype=x_t.dtype, device=x_t.device)
             m = torch.floor(x_t) + 0.5
             rounded = m + 0.5 * torch.tanh(param * (x_t - m)) / torch.tanh(param / 2.0)
             return rounded, params
