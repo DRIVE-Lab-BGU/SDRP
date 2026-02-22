@@ -21,7 +21,7 @@ class RDDLValueInitializer:
     TORCH_TYPES = {
         'int': INT,
         'real': REAL,
-        'bool': bool
+        'bool': torch.bool
     }
     
     DEFAULT_VALUES = {
@@ -102,23 +102,31 @@ class RDDLValueInitializer:
                         torch.tensor([(default if v is None else v) for v in values], dtype=dtype), 
                         shape=shape)
                     
-                    # cast to the required type
-                    if not torch.can_cast(values, dtype):
+                    # torch.can_cast expects dtypes (from_dtype, to_dtype), not tensors
+                    if not torch.can_cast(values.dtype, dtype):
                         raise RDDLTypeError(
                             f'Initial values {values} of pvariable <{var}> '
                             f'can not all be cast to required type <{prange}>.')
-                    values = values.to(dtype)
+                    values = values.to(dtype=dtype)
             
             # convert scalar variable to scalar numpy array
             else:
                 values = init_values.get(var, default)
-                if isinstance(values, str) \
-                or not torch.can_cast(torch.tensor([values]), dtype):
+                if isinstance(values, str):
                     raise RDDLTypeError(
                         f'Initial values {values} of pvariable <{var}> '
                         f'can not all be cast to required type <{prange}>.')
-                values = dtype(values)         
-                       
+
+                tmp = torch.tensor(values)
+                # torch.can_cast expects dtypes (from_dtype, to_dtype)
+                if not torch.can_cast(tmp.dtype, dtype):
+                    raise RDDLTypeError(
+                        f'Initial values {values} of pvariable <{var}> '
+                        f'can not all be cast to required type <{prange}>.')
+
+                # keep scalars as 0-dim tensors for consistency
+                values = torch.tensor(values, dtype=dtype)
+
             np_init_values[var] = values
         
         # log shapes of initial values
@@ -154,17 +162,3 @@ class RDDLValueInitializer:
             indices, = indices
         return indices
     
-def main():
-    from compiler import TorchRDDLCompiler
-    from pyRDDLGym.core.parser import RDDLParser
-    parser = RDDLParser(lexer=None, verbose=False)
-    parser.build()
-    rddl = parser.parse(domain)
-    print("###################### Parsed RDDL model ########################")
-
-    model = RDDLLiftedModel(rddl)
-
-    # moving to jax values its not happen in the parser and thr RDDLLIftedmodel
-    #print(model.cpfs)
-
-if __name__ == '__main__':    main()
