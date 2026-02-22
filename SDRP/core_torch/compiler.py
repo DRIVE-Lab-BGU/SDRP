@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 import torch
 
-from pyRDDLGym.core.compiler.initializer import RDDLValueInitializer
+from initializer_torch import RDDLValueInitializer
 from pyRDDLGym.core.compiler.levels import RDDLLevelAnalysis
 from pyRDDLGym.core.compiler.model import RDDLLiftedModel
 from pyRDDLGym.core.compiler.tracer import RDDLObjectsTracer
@@ -57,7 +57,7 @@ class TorchRDDLCompiler:
         if not isinstance(rddl, RDDLLiftedModel):
             raise ValueError("rddl must be an instance of RDDLLiftedModel.")
         self.rddl = rddl
-        print("Using provided RDDLLiftedModel.")
+
         self.logger = logger
         self.python_functions = python_functions or {}
         self.sd = sd
@@ -78,7 +78,6 @@ class TorchRDDLCompiler:
         }
 
         # compile initial values
-        # its in numpy
         initializer = RDDLValueInitializer(rddl)
         self.init_values = initializer.initialize()
         
@@ -262,7 +261,17 @@ class TorchRDDLCompiler:
             def _cast(subs, params, key):
                 value, key, err, params = fn(subs, params, key)
                 tensor = self._ensure_tensor(value)
-                return tensor.to(dtype), key, err, params
+
+
+                # If we get here with a non-tensor (e.g., a Python function),
+                # casting will crash. Raise an informative error instead.
+                if not isinstance(tensor, torch.Tensor):
+                    raise TypeError(
+                        f"Expected torch.Tensor from compiled expr (etype={expr.etype}) "
+                        f"but got {type(tensor).__name__}: {tensor!r}"
+                    )
+
+                return tensor.to(dtype=dtype), key, err, params
             return _cast
         return fn
 
@@ -1533,9 +1542,11 @@ def main():
         
     # --- compile torch ---
     compiler = TorchRDDLCompiler(model, sd=0.0, use64bit=False)
+    initializer = RDDLValueInitializer(rddl)
+    print("Initializing values...")
+    compiler.init_values = initializer.initialize()
 
-
-
+    exit( )
     print("num cpfs:", compiler.cpfs)
     print("init values keys:", list(compiler.init_values.keys())[:20])
     
