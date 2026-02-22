@@ -129,7 +129,7 @@ def main():
     base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     #print(f'-------------------base_path: {base_path}')
     domain_rddl   = os.path.join(base_path, "instances", "reservoir", "domain.rddl")
-    instance_rddl = os.path.join(base_path, "instances", "reservoir", "instance_1.rddl")
+    instance_rddl = os.path.join(base_path, "instances", "reservoir", "instance_3.rddl")
 
     myEnv = pyRDDLGym.make(
         domain=domain_rddl,
@@ -198,7 +198,7 @@ def main():
 
 
 
-    exit()
+
     print(f'sample an action from the environment: {sim.sample_action()}')
    
     obs_np = {'release': np.array([17.89675 , 15.712295], dtype=np.float32)}
