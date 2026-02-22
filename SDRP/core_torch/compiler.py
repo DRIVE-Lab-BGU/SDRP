@@ -188,7 +188,7 @@ class TorchRDDLCompiler:
 
             
             #####################################################
-            
+
             precondition_check = True
             for precond in preconds:
                 sample, key, err, model_params = precond(subs, model_params, key)
@@ -248,6 +248,7 @@ class TorchRDDLCompiler:
             >>> value, key, err, params = fn(subs, {}, None)
         """
         etype, _ = expr.etype
+        # constant - cached value, no inputs needed
         if etype == 'constant':
             fn = self._torch_constant(expr)
         elif etype == 'pvar':
@@ -352,6 +353,7 @@ class TorchRDDLCompiler:
             return _scalar
 
         slices, axis, shape, op_code, op_args = cached_info
+        # its not numpy, but we use the same tracer op codes for slicing/reshaping/etc. so we can reuse the same cached info
         tracer = RDDLObjectsTracer.NUMPY_OP_CODE
 
         if slices and op_code == tracer.NESTED_SLICE:
