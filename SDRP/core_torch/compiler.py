@@ -15,14 +15,16 @@ from pyRDDLGym.core.debug.exception import (
     RDDLUndefinedVariableError
 )
 from pyRDDLGym.core.debug.logger import Logger
+from initializer_torch import RDDLValueInitializer as TorchRDDLValueInitializer
+from logic import ExactLogic, FuzzyLogic
 
-try:
-    from .initializer_torch import RDDLValueInitializer
-    from .logic import ExactLogic, FuzzyLogic
-except ImportError:
-    # Fallback for direct-script execution.
-    from initializer_torch import RDDLValueInitializer
-    from logic import ExactLogic, FuzzyLogic
+# try:
+#     from .initializer_torch import RDDLValueInitializer
+#     from .logic import ExactLogic, FuzzyLogic
+# except ImportError:
+#     # Fallback for direct-script execution.
+#     from initializer_torch import RDDLValueInitializer
+#     from logic import ExactLogic, FuzzyLogic
 
 Args = Dict[str, Any]
 # explanation: Callable that takes (subs, params, key) and returns (value, key, error_code, params)
@@ -82,7 +84,7 @@ class TorchRDDLCompiler:
         }
 
         # compile initial values in torch tensors
-        initializer = RDDLValueInitializer(rddl)
+        initializer = TorchRDDLValueInitializer(rddl)
         self.init_values: Dict[str, torch.Tensor] = initializer.initialize()
         self.cpfs: Dict[str, CallableExpr] = {}
         self.reward: CallableExpr | None = None
@@ -92,6 +94,7 @@ class TorchRDDLCompiler:
         self.model_params: Dict[str, Any] = {}
         self.levels = None
         self.traced = None
+
 
     # ------------------------------------------------------------------
     # Public API
@@ -111,9 +114,9 @@ class TorchRDDLCompiler:
             >>> compiler.cpfs['next_state']  # torch callable
         """
 
-        initializer = RDDLValueInitializer(self.rddl, logger=self.logger)
-        init_values_np = initializer.initialize()
-        self.init_values = self._tensorize_structure(init_values_np)
+        # initializer = TorchRDDLValueInitializer(self.rddl, logger=self.logger)
+        # init_values_np = initializer.initialize()
+        # self.init_values = self._tensorize_structure(init_values_np)
 
         sorter = RDDLLevelAnalysis(self.rddl, allow_synchronous_state=True,
                                    logger=self.logger)
@@ -147,7 +150,8 @@ class TorchRDDLCompiler:
 
         if reward_fn is None:
             raise RuntimeError('compile() must be called before compile_transition().')
-
+        
+        # helper to coerce tensors to bool for precondition/invariant/termination checks
         def _to_bool(value: Any) -> bool:
             tensor = self._ensure_tensor(value)
             if isinstance(tensor, torch.Tensor):
@@ -157,20 +161,34 @@ class TorchRDDLCompiler:
         def _torch_wrapped_single_step(key, actions, subs, model_params):
             errors = self.ERROR_CODES['NORMAL']
 
+        
+            #####################################################
+            ########## main idea of the step function ###########
+            #####################################################
+
             # actions = actions + torch.normal(0, self.sd)  # optional exploration noise
+            
+            # subs is the current state and action values, which we update in-place as we compute CPFs and reward. 
+            # The final subs returned at the end of the step will have the next state values.
             subs.update(actions)
 
+            # calculate CPFs in topological order
             for (name, cpf) in cpfs.items():
                 value, key, err, model_params = cpf(subs, model_params, key)
                 subs[name] = value
                 errors |= err
 
+            # calculate the immediate reward
             reward, key, err, model_params = reward_fn(subs, model_params, key)
             errors |= err
 
+            # set the next state to the current state
             for (state, next_state) in rddl.next_state.items():
                 subs[state] = subs[next_state]
 
+            
+            #####################################################
+            
             precondition_check = True
             for precond in preconds:
                 sample, key, err, model_params = precond(subs, model_params, key)
@@ -422,6 +440,42 @@ class TorchRDDLCompiler:
     # Helpers for operations
     # ------------------------------------------------------------------
 
+    def _try_logic_eval(self, op_name: str, *args):
+        """Best-effort call into logic backend; return tensor-like value or None.
+
+        The logic API in this project has two styles:
+        1) runtime callables that consume tensors directly
+        2) factory methods `(id, init_params) -> callable`
+        When style (2) is encountered here, we skip it and fall back to raw torch ops.
+        """
+        if self.logic is None or not hasattr(self.logic, op_name):
+            return None
+
+        op = getattr(self.logic, op_name)
+        if not callable(op):
+            return None
+
+        try:
+            result = op(*args)
+        except Exception:
+            return None
+
+        # Some logic backends return `(value, params)`.
+        if isinstance(result, tuple):
+            if len(result) == 0:
+                return None
+            result = result[0]
+
+        # Factory-style API returns a callable, not a computed value.
+        if callable(result):
+            return None
+
+        if isinstance(result, torch.Tensor):
+            return result
+
+        tensor = self._ensure_tensor(result)
+        return tensor if isinstance(tensor, torch.Tensor) else None
+
     def _apply_unary(self, name: str, value: torch.Tensor):
         """Apply unary ops using logic backend or fallback torch ops.
 
@@ -436,9 +490,9 @@ class TorchRDDLCompiler:
             >>> compiler._apply_unary('neg', torch.tensor(1.))
             tensor(-1.)
         """
-        if self.logic is not None and hasattr(self.logic, name):
-            op = getattr(self.logic, name)
-            return op(value) if callable(op) else op
+        logic_value = self._try_logic_eval(name, value)
+        if logic_value is not None:
+            return logic_value
         if name == 'neg':
             return -value
         if name == 'logical_not':
@@ -489,9 +543,9 @@ class TorchRDDLCompiler:
                     rhs = rhs.unsqueeze(0)
                 rhs = rhs.expand((target,) + rhs.shape[1:])
 
-        if self.logic is not None and hasattr(self.logic, name):
-            op = getattr(self.logic, name)
-            return op(lhs, rhs) if callable(op) else op
+        logic_value = self._try_logic_eval(name, lhs, rhs)
+        if logic_value is not None:
+            return logic_value
         if name == 'add':
             return torch.add(lhs, rhs)
         if name == 'sub':
@@ -566,8 +620,11 @@ class TorchRDDLCompiler:
             except Exception:
                 pred_val = False
             pred = torch.tensor(pred_val, dtype=self.REAL)
-        if self.logic is not None and hasattr(self.logic, 'if_then_else'):
-            return self.logic.if_then_else(pred, then_value, else_value)
+        logic_value = self._try_logic_eval('control_if', pred, then_value, else_value)
+        if logic_value is None:
+            logic_value = self._try_logic_eval('if_then_else', pred, then_value, else_value)
+        if logic_value is not None:
+            return logic_value
         return torch.where(pred.to(dtype=self.REAL) > 0.5, then_value, else_value)
 
     def _apply_control_switch(self, pred: torch.Tensor, cases: torch.Tensor):
@@ -584,8 +641,11 @@ class TorchRDDLCompiler:
             >>> compiler._apply_control_switch(torch.tensor(1), torch.tensor([[0.], [2.]]))
             tensor(2.)
         """
-        if self.logic is not None and hasattr(self.logic, 'switch'):
-            return self.logic.switch(pred, cases)
+        logic_value = self._try_logic_eval('control_switch', pred, cases)
+        if logic_value is None:
+            logic_value = self._try_logic_eval('switch', pred, cases)
+        if logic_value is not None:
+            return logic_value
         pred_long = pred.to(dtype=torch.long).unsqueeze(0)
         reference = cases[:1]
         expanded_index = pred_long.expand_as(reference)
@@ -873,12 +933,9 @@ class TorchRDDLCompiler:
             if not isinstance(tensor, torch.Tensor):
                 tensor = torch.as_tensor(tensor, dtype=self.REAL)
             return torch.sign(tensor)
-        if self.logic is not None and hasattr(self.logic, op):
-            try:
-                return getattr(self.logic, op)(value)
-            except TypeError:
-                # logic op expects (id, init_params); fall back to torch op below
-                pass
+        logic_value = self._try_logic_eval(op, value)
+        if logic_value is not None:
+            return logic_value
         funcs = {
             'abs': torch.abs,
             'exp': torch.exp,
@@ -918,8 +975,9 @@ class TorchRDDLCompiler:
             >>> compiler._apply_function_binary('min', torch.tensor(1.), torch.tensor(2.))
             tensor(1.)
         """
-        if self.logic is not None and hasattr(self.logic, op):
-            return getattr(self.logic, op)(lhs, rhs)
+        logic_value = self._try_logic_eval(op, lhs, rhs)
+        if logic_value is not None:
+            return logic_value
         funcs = {
             'min': torch.minimum,
             'max': torch.maximum,
@@ -1412,7 +1470,8 @@ class TorchRDDLCompiler:
     # ------------------------------------------------------------------
     # Utility helpers
     # ------------------------------------------------------------------
-
+    
+    #. i dont think i need it because thr initial is in torch but lets keep it for now
     def _ensure_tensor(self, value: Any) -> torch.Tensor:
         """Convert arbitrary python/numpy values into Torch tensors.
 
@@ -1497,6 +1556,8 @@ class TorchRDDLCompiler:
         generator.manual_seed(int(seed))
         return generator
 
+    def printer(self):
+        return print(self.cpfs)
 
 class TorchRDDLCompilerWithGrad(TorchRDDLCompiler):
     """Gradient-aware compiler placeholder (shares implementation)."""
