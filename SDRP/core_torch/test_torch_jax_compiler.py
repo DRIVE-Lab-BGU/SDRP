@@ -12,7 +12,7 @@ from initializer_torch import RDDLValueInitializer
 
 base_path = "/Users/yuvalaroosh/Documents/SDRP/SDRP"
 domain_path   = os.path.join(base_path, "instances", "reservoir", "domain.rddl")
-instance_path = os.path.join(base_path, "instances", "reservoir", "instance_3.rddl")
+instance_path = os.path.join(base_path, "instances", "reservoir", "instance_1.rddl")
 #print(f'-----------domain_path: {domain_path}, instance_path: {instance_path}')
 from pyRDDLGym.core.parser.reader import RDDLReader
 from pyRDDLGym.core.parser.parser import RDDLParser
@@ -20,7 +20,6 @@ from pyRDDLGym.core.compiler.model import RDDLLiftedModel
 
 reader = RDDLReader(domain_path, instance_path)
 domain = reader.rddltxt
-
 parser = RDDLParser(lexer=None, verbose=False)
 parser.build()
 rddl = parser.parse(domain)
@@ -28,6 +27,83 @@ print("###################### Parsed RDDL model ########################")
 
 model = RDDLLiftedModel(rddl)
 
+from compiler import TorchRDDLCompiler
+
+reader = RDDLReader(domain_path, instance_path)
+text = reader.rddltxt
+
+parser = RDDLParser(lexer=None, verbose=False)
+parser.build()
+ast = parser.parse(text)              # ast: pyRDDLGym.core.parser.rddl.RDDL
+
+model = RDDLLiftedModel(ast)      
+print(model.cpfs)
+exit()    # model: RDDLLiftedModel
+compiler = TorchRDDLCompiler(model)   # now self exists
+
+compiler.compile()                   # compiles the model, now self.init_values exists
+print(compiler.levels)
+
+
+exit()
+
+
+# #print(type(reader.rddltxt))  # str
+# from collections.abc import Mapping, Sequence
+
+# def dump_ast(obj, name="root", depth=0, max_depth=6, max_items=12, seen=None):
+#     if seen is None:
+#         seen = set()
+#     pad = "  " * depth
+#     oid = id(obj)
+#     tname = type(obj).__name__
+
+#     if oid in seen:
+#         print(f"{pad}{name}: <recursion {tname}>")
+#         return
+#     seen.add(oid)
+
+#     if depth >= max_depth:
+#         print(f"{pad}{name}: {tname} ...")
+#         return
+
+#     if isinstance(obj, Mapping):
+#         print(f"{pad}{name}: {tname} (len={len(obj)})")
+#         for i, (k, v) in enumerate(obj.items()):
+#             if i >= max_items:
+#                 print(f"{pad}  ...")
+#                 break
+#             dump_ast(v, name=f"[{k!r}]", depth=depth + 1, max_depth=max_depth, max_items=max_items, seen=seen)
+#         return
+
+#     if isinstance(obj, (list, tuple, set)):
+#         print(f"{pad}{name}: {tname} (len={len(obj)})")
+#         for i, v in enumerate(list(obj)[:max_items]):
+#             dump_ast(v, name=f"[{i}]", depth=depth + 1, max_depth=max_depth, max_items=max_items, seen=seen)
+#         if len(obj) > max_items:
+#             print(f"{pad}  ...")
+#         return
+
+#     if hasattr(obj, "__dict__"):
+#         fields = vars(obj)
+#         print(f"{pad}{name}: {tname} fields={list(fields.keys())}")
+#         for i, (k, v) in enumerate(fields.items()):
+#             if i >= max_items:
+#                 print(f"{pad}  ...")
+#                 break
+#             dump_ast(v, name=k, depth=depth + 1, max_depth=max_depth, max_items=max_items, seen=seen)
+#         return
+
+#     print(f"{pad}{name}: {tname} = {obj!r}")
+# print(type(rddl))
+# print("top-level:", list(vars(rddl).keys()))   # בדרך כלל: domain, non_fluents, instance, ...
+# dump_ast(rddl, max_depth=7, max_items=20)
+
+  # או vars(rddl).keys()
+           # RDDL (AST)
+#print(type(model))           # RDDLLiftedModel
+
+exit()
 # moving to jax values its not happen in the parser and thr RDDLLIftedmodel
 #print(model.cpfs)
 now_i_check ="rlevel"
@@ -45,8 +121,11 @@ jax_compiler.compile()
 
 fn_step_jax = jax_compiler.compile_transition()
 # the subs in array
-subs_jax = dict(jax_compiler.init_values)
 
+subs_jax = jax_compiler.init_values
+print("##########################################################")
+print(subs_jax)
+#exit()
 #print("##################### subs ########################")
 
 #print(subs)
