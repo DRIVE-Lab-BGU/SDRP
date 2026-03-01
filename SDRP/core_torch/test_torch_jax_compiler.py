@@ -34,14 +34,15 @@ text = reader.rddltxt
 
 parser = RDDLParser(lexer=None, verbose=False)
 parser.build()
-ast = parser.parse(text)              # ast: pyRDDLGym.core.parser.rddl.RDDL
-
-model = RDDLLiftedModel(ast)      
-print(model.cpfs)
-exit()    # model: RDDLLiftedModel
-compiler = TorchRDDLCompiler(model)   # now self exists
-
-compiler.compile()                   # compiles the model, now self.init_values exists
+ast = parser.parse(text)  # ast: pyRDDLGym.core.parser.rddl.RDDL
+model = RDDLLiftedModel(ast)  
+print("###################### cpfs from ast ########################")    
+print(model.cpfs) # model: RDDLLiftedModel - no order in cpfs 
+compiler = TorchRDDLCompiler(model) 
+print("############### before ###################")  
+print(compiler.levels) #  now its none just initialized
+print("############### after ###################") 
+compiler.compile()   # compiles the model - updates the main function: cpfs and reward
 print(compiler.levels)
 
 

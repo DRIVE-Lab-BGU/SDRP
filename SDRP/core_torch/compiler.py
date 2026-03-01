@@ -129,16 +129,23 @@ class TorchRDDLCompiler:
         # init_values_np = initializer.initialize()
         # self.init_values = self._tensorize_structure(init_values_np)
 
-        # not in numpy,
+        
+        # RDDLLevlesAnalysis computes a topological sort of the CPFs to determine a 
+        # safe evaluation order, and also detects any cycles in the CPF dependencies.
+        
+        # The allow_synchronous_state=True flag allows it to handle cases where 
+        # next-state variables depend on each other,which is common in RDDL models. 
+        
+        # The resulting levels are used to ensure that when we compile the CPFs into callables, 
+        # we can evaluate them in an order that respects their dependencies.
         sorter = RDDLLevelAnalysis(self.rddl, allow_synchronous_state=True,
-                                   logger=self.logger)
-        # not in numpy
-        self.levels = sorter.compute_levels()
+                                   logger=self.logger) # not in numpy
+        self.levels = sorter.compute_levels() # not in numpy
 
-        # not in numpy 
+         
         tracer = RDDLObjectsTracer(self.rddl, logger=self.logger,
-                                   cpf_levels=self.levels)
-        self.traced = tracer.trace()
+                                   cpf_levels=self.levels) # not in numpy
+        self.traced = tracer.trace() # not in numpy
 
         init_params: Dict[str, Any] = {}
         self.model_params = init_params
@@ -153,6 +160,7 @@ class TorchRDDLCompiler:
         self.cpfs = self._compile_cpfs(init_params)
 
         self.reward = self._torch(self.rddl.reward, init_params, dtype=self.REAL)
+       
         self.model_params = init_params
 
     # ------------------------------------------------------------------
