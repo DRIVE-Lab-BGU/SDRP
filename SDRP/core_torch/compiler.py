@@ -18,14 +18,25 @@ from pyRDDLGym.core.debug.logger import Logger
 from initializer_torch import RDDLValueInitializer as TorchRDDLValueInitializer
 from logic import ExactLogic, FuzzyLogic
 
-# try:
-#     from .initializer_torch import RDDLValueInitializer
-#     from .logic import ExactLogic, FuzzyLogic
-# except ImportError:
-#     # Fallback for direct-script execution.
-#     from initializer_torch import RDDLValueInitializer
-#     from logic import ExactLogic, FuzzyLogic
-
+# # domain.rdlll + instance.rddl 
+# |
+# v
+# reader + parser 
+# |
+# v
+# model = RDDLLiftedModel(rddl) 
+# lifted mean that we have the objects and types and the 
+# expressions are still in their original form, not compiled to any specific backend
+# e.g. 
+#  for lifted : 
+#               rddl.variable_ranges['rlevel'] = 'real'
+#               rddl.pvariables['rlevel'] = ('reservoir',)
+# for grounded : 
+#               rlevel = tensor([rlevel_R1,rlevel_R2,rlevel_R3])
+# 
+# model - > sorted levels
+# sorter = RDDLLevelAnalysis(self.rddl, allow_synchronous_state=True,logger=self.logger)
+# 
 Args = Dict[str, Any]
 # explanation: Callable that takes (subs, params, key) and returns (value, key, error_code, params)
 CallableExpr = Callable[[Args, Dict[str, Any], Optional[torch.Generator]],
@@ -118,12 +129,17 @@ class TorchRDDLCompiler:
         # init_values_np = initializer.initialize()
         # self.init_values = self._tensorize_structure(init_values_np)
 
+        # not in numpy,
         sorter = RDDLLevelAnalysis(self.rddl, allow_synchronous_state=True,
                                    logger=self.logger)
+        # not in numpy
         self.levels = sorter.compute_levels()
+
+        # not in numpy 
         tracer = RDDLObjectsTracer(self.rddl, logger=self.logger,
                                    cpf_levels=self.levels)
         self.traced = tracer.trace()
+
         init_params: Dict[str, Any] = {}
         self.model_params = init_params
 
