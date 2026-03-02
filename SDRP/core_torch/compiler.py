@@ -145,8 +145,10 @@ class TorchRDDLCompiler:
          
         tracer = RDDLObjectsTracer(self.rddl, logger=self.logger,
                                    cpf_levels=self.levels) # not in numpy
+        
         self.traced = tracer.trace() # not in numpy
 
+        # parameters for logic backend
         init_params: Dict[str, Any] = {}
         self.model_params = init_params
 
@@ -195,6 +197,19 @@ class TorchRDDLCompiler:
             # subs is the current state and action values, which we update in-place as we compute CPFs and reward. 
             # The final subs returned at the end of the step will have the next state values.
             subs.update(actions)
+            # subs is a dictionary mapping variable names to
+            # their current values (as tensors).
+            # this dictionary come from the tracer, 
+            # and is updated in-place as we compute the CPFs and reward for the current step.
+            # subs look like :
+            
+            # {
+            #     'rlevel_R1': tensor(...),
+            #     'rlevel_R2': tensor(...),
+            #     'rlevel_R3': tensor(...),
+            #     'action': tensor(...),
+            #     ...
+            # }
 
             # calculate CPFs in topological order
             for (name, cpf) in cpfs.items():
