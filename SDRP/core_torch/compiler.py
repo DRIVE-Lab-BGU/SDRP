@@ -1497,6 +1497,8 @@ class TorchRDDLCompiler:
             >>> cpfs = compiler._compile_cpfs({})
             >>> list(cpfs.keys())
         """
+        # here we use the traced dependency order to ensure 
+        # CPFs are compiled after their dependencies
         torch_cpfs = {}
         for level in sorted(self.levels.keys()):
             for cpf in self.levels[level]:
