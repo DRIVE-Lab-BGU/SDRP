@@ -12,7 +12,7 @@ from initializer_torch import RDDLValueInitializer
 
 base_path = "/Users/yuvalaroosh/Documents/SDRP/SDRP"
 domain_path   = os.path.join(base_path, "instances", "reservoir", "domain.rddl")
-instance_path = os.path.join(base_path, "instances", "reservoir", "instance_1.rddl")
+instance_path = os.path.join(base_path, "instances", "reservoir", "instance_3.rddl")
 #print(f'-----------domain_path: {domain_path}, instance_path: {instance_path}')
 from pyRDDLGym.core.parser.reader import RDDLReader
 from pyRDDLGym.core.parser.parser import RDDLParser
@@ -46,7 +46,6 @@ compiler.compile()   # compiles the model - updates the main function: cpfs and 
 print(compiler.levels)
 
 
-exit()
 
 
 # #print(type(reader.rddltxt))  # str
@@ -104,7 +103,7 @@ exit()
            # RDDL (AST)
 #print(type(model))           # RDDLLiftedModel
 
-exit()
+
 # moving to jax values its not happen in the parser and thr RDDLLIftedmodel
 #print(model.cpfs)
 now_i_check ="rlevel"

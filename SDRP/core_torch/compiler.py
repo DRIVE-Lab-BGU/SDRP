@@ -147,7 +147,7 @@ class TorchRDDLCompiler:
                                    cpf_levels=self.levels) # not in numpy
         
         self.traced = tracer.trace() # not in numpy
-
+        
         # parameters for logic backend
         init_params: Dict[str, Any] = {}
         self.model_params = init_params
