@@ -8,15 +8,22 @@ import jax.numpy as jnp
 from pyRDDLGym_jax.core.compiler import JaxRDDLCompiler
 import torch
 
+import torch
+
+
 from initializer_torch import RDDLValueInitializer
 
 base_path = "/Users/yuvalaroosh/Documents/SDRP/SDRP"
 domain_path   = os.path.join(base_path, "instances", "reservoir", "domain.rddl")
-instance_path = os.path.join(base_path, "instances", "reservoir", "instance_3.rddl")
+instance_path = os.path.join(base_path, "instances", "reservoir", "instance_1.rddl")
 #print(f'-----------domain_path: {domain_path}, instance_path: {instance_path}')
 from pyRDDLGym.core.parser.reader import RDDLReader
 from pyRDDLGym.core.parser.parser import RDDLParser
 from pyRDDLGym.core.compiler.model import RDDLLiftedModel
+    
+
+
+
 
 reader = RDDLReader(domain_path, instance_path)
 domain = reader.rddltxt
@@ -135,35 +142,35 @@ key = jax.random.PRNGKey(0)
 
 list_of_jax_action_reservior = [ {
     'release': jnp.array(
-        [10.453403, 12.082102 ,2,3,4,5,6,7,5,4],
+        [10.453403, 12.082102 ],
         dtype=jnp.float64)} ,
          {
     'release': jnp.array(
-        [11.453403, 14.082102,2,3,4,5,6,7,5,4],
+        [11.453403, 14.082102 ],
         dtype=jnp.float64)} ,
          {
     'release': jnp.array(
-        [10.953403, 11.582102,2,3,4,5,6,7,5,4],
+        [10.953403, 11.582102 ],
         dtype=jnp.float64)} ,
          {
     'release': jnp.array(
-        [10.253403, 12.782102,2,3,4,5,6,7,5,4],
+        [10.253403, 12.782102 ],
         dtype=jnp.float64)} ,
         {
     'release': jnp.array(
-        [10.453403, 12.082102,2,3,4,5,6,7,5,4],
+        [10.453403, 12.082102 ],
         dtype=jnp.float64)} ,
          {
     'release': jnp.array(
-        [11.453403, 14.082102,2,3,4,5,6,7,5,4],
+        [11.453403, 14.082102 ],
         dtype=jnp.float64)} ,
          {
     'release': jnp.array(
-        [10.953403, 11.582102,2,3,4,5,6,7,5,4],
+        [10.953403, 11.582102 ],
         dtype=jnp.float64)} ,
          {
     'release': jnp.array(
-        [10.253403, 12.782102,2,3,4,5,6,7,5,4],
+        [10.253403, 12.782102 ],
         dtype=jnp.float64)} 
 ]
 
@@ -190,6 +197,8 @@ jax_list_rlvel = []
 print("######################################## now for jax ########################################")
 for actions_jax in list_of_jax_action_reservior:
     subs_jax, log_jax, model_params_jax=fn_step_jax(key, actions_jax, subs_jax, model_params)
+    print("######################jax subs########################")
+    print(subs_jax)
     jax_counter+=1
     print(f"###########################jax counter{jax_counter}########################################")
     subs_jax=subs_jax
@@ -239,35 +248,35 @@ list_of_torch_actions_race_car = [{
 
 list_of_torch_action_reservior = [ {
     'release': torch.tensor(
-        [10.453403, 12.082102 ,2,3,4,5,6,7,5,4],
+        [0, 0],
         dtype=torch.float64)} ,
          {
     'release': torch.tensor(
-        [11.453403, 14.082102,2,3,4,5,6,7,5,4],
+        [0, 0],
         dtype=torch.float64)} ,
          {
     'release': torch.tensor(
-        [10.953403, 11.582102,2,3,4,5,6,7,5,4],
+        [0, 0],
         dtype=torch.float64)} ,
          {
     'release': torch.tensor(
-        [10.253403, 12.782102,2,3,4,5,6,7,5,4],
+        [0, 0],
         dtype=torch.float64)} ,
         {
     'release': torch.tensor(
-        [10.453403, 12.082102 ,2,3,4,5,6,7,5,4],
+        [0, 0],
         dtype=torch.float64)} ,
          {
     'release': torch.tensor(
-        [11.453403, 14.082102,2,3,4,5,6,7,5,4],
+        [0, 0],
         dtype=torch.float64)} ,
          {
     'release': torch.tensor(
-        [10.953403, 11.582102,2,3,4,5,6,7,5,4],
+        [0, 0],
         dtype=torch.float64)} ,
          {
     'release': torch.tensor(
-        [10.253403, 12.782102,2,3,4,5,6,7,5,4],
+        [0, 0],
         dtype=torch.float64)} 
 ]
 
@@ -283,13 +292,15 @@ print("######################################## now for torch ##################
 
 for actions_torch in list_of_torch_action_reservior:
     subs_torch, log_torch, model_params_torch=fn_step_torch(key_torch, actions_torch, subs_torch, model_params)
+    print("######################torch subs########################")
+    #print(subs_torch)
     torc_counter+=1
     print(f"####################torch counter{torc_counter}########################################")
     torch_list_rlvel.append(subs_torch[now_i_check])
     subs_torch=subs_torch
+    print(f"########################### rain {subs_torch['rain']}########################################")
+    print(f"########################### level {subs_torch['rlevel']}########################################")
     #print(subs_torch[now_i_check])
-
-print("#####################torch list rlevel########################")
 
 
 
@@ -299,13 +310,13 @@ import numpy as np
 # --- compare Torch vs JAX numerically ---
 # Bring JAX array to host as NumPy, then convert to Torch so subtraction is type-compatible.
 
-jax_lists = [np.asarray(jax.device_get(x)).tolist() for x in jax_list_rlvel]
-torch_lists = [t.detach().cpu().tolist() for t in torch_list_rlvel]
-print(jax_lists[0])
-print(torch_lists[0])
-for i in range(len(jax_lists)):
-    print(f"####################### comparing step {i} ########################")
-    diff = "same" if np.all(np.abs(np.array(jax_lists[i]) - np.array(torch_lists[i])) < (0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.002)) else "different"
-    diff_values = np.abs(np.array(jax_lists[i]) - np.array(torch_lists[i]))
-    print(f"diff: {diff}")
-    #print(f"diff values: {diff_values}")
+# jax_lists = [np.asarray(jax.device_get(x)).tolist() for x in jax_list_rlvel]
+# torch_lists = [t.detach().cpu().tolist() for t in torch_list_rlvel]
+# print(jax_lists[0])
+# print(torch_lists[0])
+# for i in range(len(jax_lists)):
+#     print(f"####################### comparing step {i} ########################")
+#     diff = "same" if np.all(np.abs(np.array(jax_lists[i]) - np.array(torch_lists[i])) < (0.002,0.002)) else "different"
+#     diff_values = np.abs(np.array(jax_lists[i]) - np.array(torch_lists[i]))
+#     print(f"diff: {diff}")
+#     #print(f"diff values: {diff_values}")
