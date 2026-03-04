@@ -216,6 +216,22 @@ class TorchRDDLCompiler:
                 value, key, err, model_params = cpf(subs, model_params, key)
                 subs[name] = value
                 errors |= err
+                # the cpf come from:
+                #
+                #    RDDL file
+                #       ↓
+                #    Parser (pyRDDLGym)
+                #       ↓
+                #    RDDLLiftedModel
+                #       ↓
+                #    self.rddl.cpfs
+                #       ↓
+                #    expr  (AST)
+                #       ↓
+                #    _torch(expr)
+                #       ↓
+                #    cpf function
+
 
             # calculate the immediate reward
             reward, key, err, model_params = reward_fn(subs, model_params, key)
@@ -287,13 +303,12 @@ class TorchRDDLCompiler:
             >>> value, key, err, params = fn(subs, {}, None)
         """
         etype, _ = expr.etype
-        # constant - cached value, no inputs needed
         if etype == 'constant':
-            fn = self._torch_constant(expr)
+            fn = self._torch_constant(expr) # check
         elif etype == 'pvar':
-            fn = self._torch_pvar(expr, init_params)
+            fn = self._torch_pvar(expr, init_params) # check
         elif etype == 'arithmetic':
-            fn = self._torch_arithmetic(expr, init_params)
+            fn = self._torch_arithmetic(expr, init_params) # helf check - need to check unary and binary
         elif etype == 'relational':
             fn = self._torch_relational(expr, init_params)
         elif etype == 'boolean':
@@ -394,7 +409,8 @@ class TorchRDDLCompiler:
         slices, axis, shape, op_code, op_args = cached_info
         # its not numpy, but we use the same tracer op codes for slicing/reshaping/etc. so we can reuse the same cached info
         tracer = RDDLObjectsTracer.NUMPY_OP_CODE
-
+        # to make sure the slice objects are properly converted to callables that return tensors/indices, 
+        # we wrap them using _torch_slice
         if slices and op_code == tracer.NESTED_SLICE:
             compiled_slices = [
                 self._torch(arg, init_params) if _slice is None
@@ -424,31 +440,46 @@ class TorchRDDLCompiler:
                 return sample, key, self.ERROR_CODES['NORMAL'], params
             if slices:
                 sample = sample[slices]
+
+            
             if axis:
                 current = sample
                 for ax in sorted(axis):
+                    # unsqueeze to add singleton dimensions at the specified axes, then expand to the target shape
+                    # the same idea of expand_dims of jnp 
                     current = torch.unsqueeze(current, dim=ax)
+                # the shape from the tracer is the target shape after broadcasting, so we need to expand the unsqueezed tensor to that shape
                 target_shape = shape
                 if not isinstance(target_shape, tuple):
                     target_shape = (target_shape,)
+
                 if len(target_shape) < current.dim():
                     # preserve trailing dims from current if target is shorter
                     trailing = tuple(current.shape[len(target_shape):])
                     target_shape = tuple(target_shape) + trailing
                 try:
-                    sample = current.expand(target_shape)
+                    sample = current.expand(target_shape) # duplicates the values along the new axes without actually copying data, line the jax version
                 except Exception:
                     sample = current.expand(*target_shape)
+
+
+            # apply tensor contraction when duplicated logical variables appear in the RDDL expression
+            # example: fluent(?x, ?x)
+            # after slicing/broadcasting the tensor may contain repeated axes that represent
+            # the same logical variable; in this case the tracer marks the operation as EINSUM.
+            # op_args contains:
+            #   op_args[0] -> the einsum equation (e.g. 'ij->i', 'ij,jk->ik')
+            #   op_args[1:] -> optional additional tensors used in the contraction
+            # torch.einsum then performs the required reduction / contraction to merge the
+            # duplicated dimensions and produce the correct tensor shape.
             if op_code == tracer.EINSUM:
-                equation = op_args[0]
-                operands = op_args[1:] if len(op_args) > 1 else ()
+                equation = op_args[0] # the einsum equation string (e.g. 'ij,jk->ik')
+                operands = op_args[1:] if len(op_args) > 1 else () # any additional operand tensors needed for the einsum (e.g. the 'jk' matrix in a matmul)
                 sample = torch.einsum(equation, sample, *operands)
+            
+            
             elif op_code == tracer.TRANSPOSE:
-                try:
-                    sample = sample.permute(op_args)
-                except Exception:
-                    # fallback: if dims mismatch, leave sample unchanged
-                    pass
+                sample = sample.permute(*op_args)
             return sample, key, self.ERROR_CODES['NORMAL'], params
 
         return _non_nested
@@ -467,6 +498,10 @@ class TorchRDDLCompiler:
             >>> slice_fn({}, {}, None)[0]
             slice(0, 2, None)
         """
+        # check if slice_value is a native indexing object:
+        # slice(...)  -> standard Python slice (e.g. slice(0,2), slice(None,None,-1))
+        # Ellipsis (...) -> shorthand meaning "all remaining dimensions"
+        # None -> adds a new axis (equivalent to numpy.newaxis)
         if isinstance(slice_value, (slice, type(Ellipsis), type(None))):
             stored = slice_value
         else:
@@ -744,6 +779,7 @@ class TorchRDDLCompiler:
             >>> value, key, err, params = fn(subs, {}, None)
         """
         _, op = expr.etype
+        #its happen in the elif in jax
         args = [self._torch(arg, init_params) for arg in expr.args]
 
         if len(args) == 1 and op == '-':
@@ -1598,9 +1634,6 @@ class TorchRDDLCompiler:
         seed = torch.randint(0, 2**31 - 1, (1,), dtype=torch.int64).item()
         generator.manual_seed(int(seed))
         return generator
-
-    def printer(self):
-        return print(self.cpfs)
 
 class TorchRDDLCompilerWithGrad(TorchRDDLCompiler):
     """Gradient-aware compiler placeholder (shares implementation)."""
