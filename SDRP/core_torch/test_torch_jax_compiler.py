@@ -142,35 +142,35 @@ key = jax.random.PRNGKey(0)
 
 list_of_jax_action_reservior = [ {
     'release': jnp.array(
-        [10.453403, 12.082102 ],
+        [0, 0 ],
         dtype=jnp.float64)} ,
          {
     'release': jnp.array(
-        [11.453403, 14.082102 ],
+        [0, 0 ],
         dtype=jnp.float64)} ,
          {
     'release': jnp.array(
-        [10.953403, 11.582102 ],
+        [0, 0 ],
         dtype=jnp.float64)} ,
          {
     'release': jnp.array(
-        [10.253403, 12.782102 ],
+        [0, 0 ],
         dtype=jnp.float64)} ,
         {
     'release': jnp.array(
-        [10.453403, 12.082102 ],
+        [0, 0 ],
         dtype=jnp.float64)} ,
          {
     'release': jnp.array(
-        [11.453403, 14.082102 ],
+        [0, 0 ],
         dtype=jnp.float64)} ,
          {
     'release': jnp.array(
-        [10.953403, 11.582102 ],
+        [0, 0 ],
         dtype=jnp.float64)} ,
          {
     'release': jnp.array(
-        [10.253403, 12.782102 ],
+        [0, 0 ],
         dtype=jnp.float64)} 
 ]
 
@@ -196,12 +196,18 @@ model_params = {}  # Example model parameters (if needed)
 jax_list_rlvel = []
 print("######################################## now for jax ########################################")
 for actions_jax in list_of_jax_action_reservior:
+    prev_rlevel = subs_jax["rlevel"]
+
+
     subs_jax, log_jax, model_params_jax=fn_step_jax(key, actions_jax, subs_jax, model_params)
+
+    # i change the dynamic that the EVAPORATION_FACTOR is 0 
+    print(f"the rain is,{subs_jax['rain']} ")
+    print("the prev rlevel is:", prev_rlevel)
+    print("expected(rain + rlevel):", prev_rlevel + subs_jax["rain"] )
+    print("actual rlevel':", subs_jax["rlevel'"])
+    print("actual rlevel:", subs_jax["rlevel"])
     print("######################jax subs########################")
-    print(subs_jax)
-    jax_counter+=1
-    print(f"###########################jax counter{jax_counter}########################################")
-    subs_jax=subs_jax
     jax_list_rlvel.append(subs_jax[now_i_check])
     #print(subs_jax[now_i_check])
 print("#####################jax list rlevel########################")
@@ -291,18 +297,30 @@ print("######################################## now for torch ##################
 
 
 for actions_torch in list_of_torch_action_reservior:
+    prev_rlevel = subs_torch["rlevel"]
+
+
     subs_torch, log_torch, model_params_torch=fn_step_torch(key_torch, actions_torch, subs_torch, model_params)
+
+    # i change the dynamic that the EVAPORATION_FACTOR is 0 
+    print(f"the rain is,{subs_torch['rain']} ")
+    print("the prev rlevel is:", prev_rlevel)
+    print("expected(rain + rlevel):", prev_rlevel + subs_torch["rain"] )
+    print("actual rlevel':", subs_torch["rlevel'"])
+    print("actual rlevel:", subs_torch["rlevel"])
     print("######################torch subs########################")
     #print(subs_torch)
     torc_counter+=1
-    print(f"####################torch counter{torc_counter}########################################")
     torch_list_rlvel.append(subs_torch[now_i_check])
-    subs_torch=subs_torch
-    print(f"########################### rain {subs_torch['rain']}########################################")
-    print(f"########################### level {subs_torch['rlevel']}########################################")
+
+    
+    
     #print(subs_torch[now_i_check])
 
-
+# print("#####################torch list rlevel########################")
+# print(torch_list_rlvel)
+# print("#####################jax list rlevel########################")
+# print(jax_list_rlvel)
 
 import numpy as np
 
