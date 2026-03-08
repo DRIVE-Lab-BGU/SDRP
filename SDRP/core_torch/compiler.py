@@ -138,6 +138,7 @@ class TorchRDDLCompiler:
         
         # The resulting levels are used to ensure that when we compile the CPFs into callables, 
         # we can evaluate them in an order that respects their dependencies.
+        
         sorter = RDDLLevelAnalysis(self.rddl, allow_synchronous_state=True,
                                    logger=self.logger) # not in numpy
         self.levels = sorter.compute_levels() # not in numpy
@@ -145,19 +146,18 @@ class TorchRDDLCompiler:
          
         tracer = RDDLObjectsTracer(self.rddl, logger=self.logger,
                                    cpf_levels=self.levels) # not in numpy
-        
         self.traced = tracer.trace() # not in numpy
         
-        # parameters for logic backend
+       
         init_params: Dict[str, Any] = {}
         self.model_params = init_params
 
         self.invariants = [self._torch(expr, init_params, dtype=torch.bool)
                            for expr in self.rddl.invariants]
-        self.preconditions = [self._torch(expr, init_params, dtype=torch.bool)
-                              for expr in self.rddl.preconditions]
-        self.terminations = [self._torch(expr, init_params, dtype=torch.bool)
-                             for expr in self.rddl.terminations]
+        
+        self.preconditions = [self._torch(expr, init_params, dtype=torch.bool) for expr in self.rddl.preconditions]
+        
+        self.terminations = [self._torch(expr, init_params, dtype=torch.bool) for expr in self.rddl.terminations]
         
         self.cpfs = self._compile_cpfs(init_params)
 
@@ -202,7 +202,6 @@ class TorchRDDLCompiler:
             # this dictionary come from the tracer, 
             # and is updated in-place as we compute the CPFs and reward for the current step.
             # subs look like :
-            
             # {
             #     'rlevel_R1': tensor(...),
             #     'rlevel_R2': tensor(...),
@@ -308,7 +307,7 @@ class TorchRDDLCompiler:
         elif etype == 'pvar':
             fn = self._torch_pvar(expr, init_params) # check
         elif etype == 'arithmetic':
-            fn = self._torch_arithmetic(expr, init_params) # helf check - need to check unary and binary
+            fn = self._torch_arithmetic(expr, init_params) # helf check - need to check unary and
         elif etype == 'relational':
             fn = self._torch_relational(expr, init_params)
         elif etype == 'boolean':
@@ -415,7 +414,7 @@ class TorchRDDLCompiler:
             compiled_slices = [
                 self._torch(arg, init_params) if _slice is None
                 else self._torch_slice(_slice) for (arg, _slice) in zip(pvars, slices)
-            ]
+                              ]
 
             def _nested(subs, params, key):
                 value = self._ensure_tensor(subs[var])
@@ -447,7 +446,7 @@ class TorchRDDLCompiler:
                 for ax in sorted(axis):
                     # unsqueeze to add singleton dimensions at the specified axes, then expand to the target shape
                     # the same idea of expand_dims of jnp 
-                    current = torch.unsqueeze(current, dim=ax)
+                    current = torch.unsqueeze(current, dim = ax)
                 # the shape from the tracer is the target shape after broadcasting, so we need to expand the unsqueezed tensor to that shape
                 target_shape = shape
                 if not isinstance(target_shape, tuple):
@@ -1211,48 +1210,82 @@ class TorchRDDLCompiler:
 
     def _sample_random_variable(self, name: str, values: List[torch.Tensor],
                                 generator: torch.Generator, expr) -> torch.Tensor:
-        if name == 'KronDelta':
+        if name == 'KronDelta': # checked
             sample = values[0].to(dtype=self.INT)
-        elif name == 'DiracDelta':
+
+        elif name == 'DiracDelta': # checked
             sample = values[0].to(dtype=self.REAL)
-        elif name == 'Uniform':
+        
+        # reparameterization trick U(a, b) = a + (b - a) * U(0, 1)
+        elif name == 'Uniform': # checked
             low, high = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
             rand = torch.rand(high.shape, generator=generator, device=high.device, dtype=self.REAL)
             sample = low + (high - low) * rand
-        elif name == 'Normal':
+
+        # reparameterization trick N(m, s^2) = m + s * N(0, 1)
+        elif name == 'Normal': # checked
+            # reparametrization trick to allow backprop through the sampling process, 
+            # following the convention of mean and variance as parameters
             mean, var = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
             std = torch.sqrt(torch.clamp(var, min=1e-8))
             eps = torch.randn(mean.shape, generator=generator, device=mean.device, dtype=self.REAL)
             sample = mean + std * eps
-        elif name == 'Poisson':
-            rate = torch.clamp(values[0].to(self.REAL), min=0.0)
-            sample = torch.poisson(rate, generator=generator).to(dtype=self.INT)
-        elif name == 'Exponential':
+            
+
+         # reparameterization trick Exp(s) = s * Exp(1)
+        elif name == 'Exponential': #checked
             scale = torch.clamp(values[0].to(self.REAL), min=1e-8)
-            rand = torch.rand(scale.shape, generator=generator, device=scale.device, dtype=self.REAL)
-            sample = -scale * torch.log(torch.clamp(rand, min=1e-8))
-        elif name == 'Weibull':
+            exp1 = torch.empty_like(scale).exponential_(1.0, generator=generator)  # Exp(rate=1)
+            sample = scale * exp1
+
+         # reparameterization trick W(s, r) = r * (-ln(1 - U(0, 1))) ** (1 / s)
+        
+        elif name == 'Weibull': #checked
             shape, scale = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
             shape = torch.clamp(shape, min=1e-8)
             scale = torch.clamp(scale, min=1e-8)
             rand = torch.rand(scale.shape, generator=generator, device=scale.device, dtype=self.REAL)
+            # log1p means lod(1+x)
             sample = scale * torch.pow(-torch.log1p(-torch.clamp(rand, max=1.0 - 1e-8)), 1.0 / shape)
+
+
+
+
+        elif name == 'Gamma': # checked
+            shape, scale = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
+            shape = torch.clamp(shape, min=1e-8)
+            scale = torch.clamp(scale, min=1e-8)
+            gamma = torch.distributions.Gamma(concentration=shape, rate=1.0)
+            sample = scale * gamma.sample(generator=generator)
+        
+        
+        
+        elif name == 'Beta': # checked
+            a, b = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
+            a = torch.clamp(a, min=1e-8)
+            b = torch.clamp(b, min=1e-8)
+            dist = torch.distributions.Beta(a, b)
+            sample = dist.sample(generator=generator)
+        
+
+        # TBD
+        
+        elif name == 'Poisson':
+            rate = torch.clamp(values[0].to(self.REAL), min=0.0)
+            sample = torch.poisson(rate, generator=generator).to(dtype=self.INT)
+
         elif name == 'Bernoulli':
             probs = torch.clamp(values[0].to(self.REAL), 0.0, 1.0)
             rand = torch.rand(probs.shape, generator=generator, device=probs.device, dtype=self.REAL)
             sample = (rand <= probs).to(dtype=self.REAL)
-        elif name == 'Gamma':
-            shape, scale = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
-            shape = torch.clamp(shape, min=1e-8)
-            scale = torch.clamp(scale, min=1e-8)
-            dist = torch.distributions.Gamma(concentration=shape, rate=1.0 / scale)
-            sample = dist.sample()
+
         elif name == 'Binomial':
             trials, prob = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
             trials = torch.clamp(trials, min=0.0)
             prob = torch.clamp(prob, 0.0, 1.0)
             dist = torch.distributions.Binomial(total_count=trials, probs=prob)
             sample = dist.sample().to(dtype=self.INT)
+        
         elif name == 'NegativeBinomial':
             trials, prob = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
             trials = torch.clamp(trials, min=1e-8)
@@ -1260,41 +1293,47 @@ class TorchRDDLCompiler:
             # keep pyRDDLGym_jax convention: failures before `trials` successes
             dist = torch.distributions.NegativeBinomial(total_count=trials, probs=1.0 - prob)
             sample = dist.sample().to(dtype=self.INT)
-        elif name == 'Beta':
-            a, b = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
-            a = torch.clamp(a, min=1e-8)
-            b = torch.clamp(b, min=1e-8)
-            dist = torch.distributions.Beta(a, b)
-            sample = dist.sample()
+        
         elif name == 'Geometric':
             prob = torch.clamp(values[0].to(self.REAL), min=1e-8, max=1.0 - 1e-8)
             dist = torch.distributions.Geometric(probs=prob)
             sample = dist.sample().to(dtype=self.INT)
+        
+        
         elif name == 'Pareto':
             shape, scale = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
             shape = torch.clamp(shape, min=1e-8)
             scale = torch.clamp(scale, min=1e-8)
             dist = torch.distributions.Pareto(scale=scale, alpha=shape)
             sample = dist.sample()
+        
+        
         elif name == 'Student':
             df = torch.clamp(values[0].to(self.REAL), min=1e-8)
             dist = torch.distributions.StudentT(df=df)
             sample = dist.sample()
+        
         elif name == 'Gumbel':
             mean, scale = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
             scale = torch.clamp(scale, min=1e-8)
             dist = torch.distributions.Gumbel(loc=mean, scale=scale)
             sample = dist.sample()
+        
+        
         elif name == 'Laplace':
             mean, scale = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
             scale = torch.clamp(scale, min=1e-8)
             dist = torch.distributions.Laplace(loc=mean, scale=scale)
             sample = dist.sample()
+        
+        
         elif name == 'Cauchy':
             mean, scale = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
             scale = torch.clamp(scale, min=1e-8)
             dist = torch.distributions.Cauchy(loc=mean, scale=scale)
             sample = dist.sample()
+        
+        
         elif name == 'Gompertz':
             shape, scale = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
             shape = torch.clamp(shape, min=1e-8)
@@ -1302,28 +1341,37 @@ class TorchRDDLCompiler:
             rand = torch.rand(scale.shape, generator=generator, device=scale.device, dtype=self.REAL)
             inner = 1.0 - torch.log1p(-torch.clamp(rand, max=1.0 - 1e-8)) / shape
             sample = torch.log(torch.clamp(inner, min=1e-8)) / scale
+        
+        
         elif name == 'ChiSquare':
             df = torch.clamp(values[0].to(self.REAL), min=1e-8)
             dist = torch.distributions.Chi2(df=df)
             sample = dist.sample()
+        
+        
         elif name == 'Kumaraswamy':
             a, b = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
             a = torch.clamp(a, min=1e-8)
             b = torch.clamp(b, min=1e-8)
             rand = torch.rand(a.shape, generator=generator, device=a.device, dtype=self.REAL)
             sample = torch.pow(1.0 - torch.pow(rand, 1.0 / b), 1.0 / a)
+        
+        
         elif name in {'Discrete', 'UnnormDiscrete'}:
             prob = torch.stack([val.to(self.REAL) for val in values], dim=-1)
             if name == 'UnnormDiscrete':
                 normalizer = torch.sum(prob, dim=-1, keepdim=True)
                 prob = prob / torch.clamp(normalizer, min=1e-12)
             sample = self._sample_discrete(prob, generator)
+        
+        
         elif name in {'Discrete(p)', 'UnnormDiscrete(p)'}:
             prob = values[0].to(self.REAL)
             if name == 'UnnormDiscrete(p)':
                 normalizer = torch.sum(prob, dim=-1, keepdim=True)
                 prob = prob / torch.clamp(normalizer, min=1e-12)
             sample = self._sample_discrete(prob, generator)
+        
         else:
             raise RDDLNotImplementedError(
                 f'Random variable {name} is not supported.\n' + print_stack_trace(expr))
@@ -1639,3 +1687,4 @@ class TorchRDDLCompilerWithGrad(TorchRDDLCompiler):
     """Gradient-aware compiler placeholder (shares implementation)."""
 
     pass
+
