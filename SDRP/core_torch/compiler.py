@@ -15,8 +15,12 @@ from pyRDDLGym.core.debug.exception import (
     RDDLUndefinedVariableError
 )
 from pyRDDLGym.core.debug.logger import Logger
-from initializer_torch import RDDLValueInitializer as TorchRDDLValueInitializer
-from logic import ExactLogic, FuzzyLogic
+try:
+    from .initializer_torch import RDDLValueInitializer as TorchRDDLValueInitializer
+    from .logic import ExactLogic, FuzzyLogic
+except ImportError:  # pragma: no cover - fallback for script-style execution
+    from initializer_torch import RDDLValueInitializer as TorchRDDLValueInitializer
+    from logic import ExactLogic, FuzzyLogic
 
 # # domain.rdlll + instance.rddl 
 # |
@@ -143,7 +147,25 @@ class TorchRDDLCompiler:
                                    logger=self.logger) # not in numpy
         self.levels = sorter.compute_levels() # not in numpy
 
-         
+        # Although the Torch backend executes expressions eagerly (step-by-step),
+        # we still use the tracer to analyze the RDDL AST once and cache structural
+        # information (such as tensor slices, object indices, and aggregation axes),
+        # so the simulator can evaluate expressions efficiently without repeatedly
+        # interpreting the symbolic RDDL structure.
+        # Example (Reservoir domain):
+            #
+            # RDDL expression:
+            #     sum_{?r : reservoir} rlevel(?r)
+            #
+            # Meaning:
+            #     compute the total water level across all reservoirs.
+            #
+            # The tracer analyzes this expression once and determines:
+            #     axis = 0   # the tensor dimension corresponding to ?r (reservoir objects)
+            #
+            # Then during simulation we can directly execute:
+            # total_level = torch.sum(subs['rlevel'], dim=0)
+                    
         tracer = RDDLObjectsTracer(self.rddl, logger=self.logger,
                                    cpf_levels=self.levels) # not in numpy
         self.traced = tracer.trace() # not in numpy
@@ -1227,7 +1249,8 @@ class TorchRDDLCompiler:
             # reparametrization trick to allow backprop through the sampling process, 
             # following the convention of mean and variance as parameters
             mean, var = torch.broadcast_tensors(values[0].to(self.REAL), values[1].to(self.REAL))
-            std = torch.sqrt(torch.clamp(var, min=1e-8))
+            #std = torch.sqrt(torch.clamp(var, min=1e-8))
+            std= torch.sqrt(var)
             eps = torch.randn(mean.shape, generator=generator, device=mean.device, dtype=self.REAL)
             sample = mean + std * eps
             
@@ -1685,6 +1708,4 @@ class TorchRDDLCompiler:
 
 class TorchRDDLCompilerWithGrad(TorchRDDLCompiler):
     """Gradient-aware compiler placeholder (shares implementation)."""
-
     pass
-
