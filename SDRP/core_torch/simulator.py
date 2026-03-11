@@ -1,102 +1,354 @@
-# ok lets try to make a simulator our algorithm but instead numpy let's use torch
+"""Torch-native simulator mirroring the JAX simulator interface."""
 
+from __future__ import annotations
+
+import time
+from copy import deepcopy
+from typing import Any, Dict, Optional, Union
+
+import numpy as np
 import torch
-import pyRDDLGym
-import os
-from pyRDDLGym.core.parser.reader import RDDLReader
-from pyRDDLGym.core.parser.parser import RDDLParser
+
+from pyRDDLGym.core.compiler.initializer import RDDLValueInitializer
 from pyRDDLGym.core.compiler.model import RDDLLiftedModel
-    
-from compiler import TorchRDDLCompiler
+from pyRDDLGym.core.debug.exception import (
+    RDDLActionPreconditionNotSatisfiedError,
+    RDDLInvalidActionError,
+    RDDLInvalidExpressionError,
+    RDDLStateInvariantNotSatisfiedError,
+)
+from pyRDDLGym.core.debug.logger import Logger
+from pyRDDLGym.core.parser.expr import Value
+from pyRDDLGym.core.simulator import RDDLSimulator
+
+try:
+    from .compiler import TorchRDDLCompiler
+except ImportError:  # pragma: no cover - fallback for script-style execution
+    from compiler import TorchRDDLCompiler
+
+Args = Dict[str, Union[np.ndarray, torch.Tensor, Value, float, int, bool]]
 
 
+class TorchRDDLSimulator(RDDLSimulator):
+    """Single-step torch simulator used by rollout/training loops."""
 
-# TODO:
-# 1. init 
-# 2. step
-# 3. reset
-# 4. render ?? 
-## 5. close
-# 6. seed
-x = torch.tensor([114.4, 21.4], requires_grad=True)
+    def __init__(self, rddl: RDDLLiftedModel,
+                 key: Optional[torch.Generator]=None,
+                 raise_error: bool=True,
+                 logger: Optional[Logger]=None,
+                 keep_tensors: bool=False,
+                 objects_as_strings: bool=True,
+                 device: Optional[Union[str, torch.device]]=None,
+                 **compiler_args) -> None:
+        if key is None:
+            key = torch.Generator()
+            key.manual_seed(round(time.time() * 1000))
+        self.key = key
+        self.raise_error = raise_error
+        # example for compiler_args: {'use64bit': True} 
+        self.compiler_args = compiler_args
+        self.device = torch.device(device) if device is not None else torch.device('cpu')
+        self.compiler: Optional[TorchRDDLCompiler] = None
+        self.step_fn = None
 
-# y = x.sum()
-# y.backward()
+        super(TorchRDDLSimulator, self).__init__(
+            rddl=rddl, logger=logger,
+            keep_tensors=keep_tensors, objects_as_strings=objects_as_strings
+        )
 
-# print(x.grad)
+    def seed(self, seed: int) -> None:
+        super(TorchRDDLSimulator, self).seed(seed)
+        self.key.manual_seed(seed)
+        torch.manual_seed(seed)
 
-class Simulator():
-    def __init__(self, domain_path  , instance_path , state = None , action = None , model_params = None):
-        """
-        the simulator get the model( rddl path?). and obs(subs) and the action. do one step and return the reward obs.
-        
-        
-        the init ger paths to the rddl domain and instance 
-        files and parse them to create the model"""
-        
+    def _compile(self):
+        rddl = self.rddl
 
-        reader = RDDLReader(domain_path, instance_path)
-        domain = reader.rddltxt
-        parser = RDDLParser(lexer=None, verbose=False)
-        parser.build()
-        rddl = parser.parse(domain)
-        self.model = RDDLLiftedModel(rddl)
-        self.horizon = self.model.horizon
-        self.torch_compiler = TorchRDDLCompiler(self.model , use64bit =False)
-        self.torch_compiler.compile()
-        self.fn_step = self.torch_compiler.compile_transition()
-        ###
-        self.generator = torch.Generator().manual_seed(0)
-        ###
-        self.state = state
-        self.action = action  
-        if self.state is None: 
-            self.subs_torch = dict(self.torch_compiler.init_values)
-        ###
-        if self.action is None:
-            self.subs_torch.update(dict(self.torch_compiler.init_actions))
-        ###    
-        if model_params is None:
-            self.model_params = dict(self.torch_compiler.init_model_params)
-        ###
-        pass
+        compiled = TorchRDDLCompiler(rddl, logger=self.logger, **self.compiler_args)
+        compiled.compile(log_expr=False, heading='SIMULATION MODEL')
 
-    def step(self, action):
-        subs_torch, log_torch, model_params_torch=self.fn_step(self.generator, self.action, self.state, self.model_params)
-        pass
+        self.compiler = compiled
+        self.step_fn = compiled.compile_transition(cache_path_info=False)
+        # To make sure we dont change the compiler's internal data structures during simulation,
+        # we clone the init_values and model_params before using them in the simulator.
+        self.init_values = self._clone_structure(compiled.init_values)
+        self.levels = compiled.levels
+        self.traced = compiled.traced
+        #####
+        self.invariants = compiled.invariants
+        self.preconds = compiled.preconditions
+        self.terminals = compiled.terminations
+        ######
+
+        self.reward = compiled.reward
+        # To make sure we dont change the compiler's internal data structures during simulation,
+        # we clone the init_values and model_params before using them in the simulator.
+        self.model_params = self._clone_structure(compiled.model_params)
+
+        self.subs = self._clone_structure(self.init_values)
+        self.state = None
+        self.noop_actions = {
+            var: self._clone_value(values)
+            for (var, values) in self.init_values.items()
+            if rddl.variable_types[var] == 'action-fluent'
+        }
+        #####
+        self.grounded_noop_actions = rddl.ground_vars_with_values(self.noop_actions)
+        self.grounded_action_ranges = rddl.ground_vars_with_value(rddl.action_ranges)
+        self._pomdp = bool(rddl.observ_fluents)
+        #####
+
+        self.invariant_names = [f'Invariant {i}' for i in range(len(rddl.invariants))]
+        self.precond_names = [f'Precondition {i}' for i in range(len(rddl.preconditions))]
+        self.terminal_names = [f'Termination {i}' for i in range(len(rddl.terminations))]
+
+    def handle_error_code(self, error: int, msg: str) -> None:
+        if self.raise_error and int(error) != 0:
+            raise RDDLInvalidExpressionError(
+                f'Internal error in evaluation of {msg}: error code {int(error)}.')
+
+    def check_state_invariants(self, silent: bool=False) -> bool:
+        for (i, invariant) in enumerate(self.invariants):
+            loc = self.invariant_names[i]
+            sample, self.key, error, self.model_params = invariant(
+                self.subs, self.model_params, self.key)
+            self.handle_error_code(error, loc)
+            if not self._to_bool(sample):
+                if not silent:
+                    raise RDDLStateInvariantNotSatisfiedError(
+                        f'{loc} is not satisfied.')
+                return False
+        return True
+
+    def check_action_preconditions(self, actions: Args, silent: bool=False) -> bool:
+        sim_actions = self._prepare_actions_for_torch(actions)
+        self.subs.update(sim_actions)
+
+        for (i, precond) in enumerate(self.preconds):
+            loc = self.precond_names[i]
+            sample, self.key, error, self.model_params = precond(
+                self.subs, self.model_params, self.key)
+            self.handle_error_code(error, loc)
+            if not self._to_bool(sample):
+                if not silent:
+                    raise RDDLActionPreconditionNotSatisfiedError(
+                        f'{loc} is not satisfied for actions {actions}.')
+                return False
+        return True
+
+    def check_terminal_states(self) -> bool:
+        for (i, terminal) in enumerate(self.terminals):
+            loc = self.terminal_names[i]
+            sample, self.key, error, self.model_params = terminal(
+                self.subs, self.model_params, self.key)
+            self.handle_error_code(error, loc)
+            if self._to_bool(sample):
+                return True
+        return False
+
+    def sample_reward(self) -> torch.Tensor:
+        """Sample the reward for the current state and action."""
+        reward, self.key, error, self.model_params = self.reward(
+            self.subs, self.model_params, self.key)
+        self.handle_error_code(error, 'reward function')
+        return reward
 
     def reset(self):
-        # Reset the environment and return the initial state
-        pass
+        """ Reset the simulator to the initial state. 
+        Returns the initial observation and a boolean indicating whether the initial state is terminal."""
+        if self.compiler is None:
+            raise RuntimeError('Simulator was not compiled.')
 
-    def render(self):
-        # Render the current state of the environment
-        pass
+        rddl = self.rddl
+        keep_tensors = self.keep_tensors
+        self.subs = self._clone_structure(self.init_values)
+        self.model_params = self._clone_structure(self.compiler.model_params)
 
-    def close(self):
-        # Clean up resources if necessary
-        pass
+        self.state = {}
+        for state in rddl.state_fluents:
+            raw_state_values = self.subs[state]
+            state_values = raw_state_values
+            if self.objects_as_strings:
+                ptype = rddl.variable_ranges[state]
+                if ptype not in RDDLValueInitializer.NUMPY_TYPES:
+                    state_values = rddl.index_to_object_string_array(
+                        ptype, self._to_ground_value(raw_state_values))
+            if keep_tensors:
+                self.state[state] = state_values
+            else:
+                self.state.update(rddl.ground_var_with_values(
+                    state, self._to_ground_value(state_values)))
 
-    def seed(self, seed=None):
-        # Set the random seed for reproducibility
-        pass
-    def printer(self):
-        print(f"############# horizon : {self.horizon}##############")
+        if self._pomdp:
+            if keep_tensors:
+                obs = {var: None for var in rddl.observ_fluents}
+            else:
+                obs = {}
+                for var in rddl.observ_fluents:
+                    obs.update(rddl.ground_var_with_value(var, None))
+        else:
+            obs = self.state
+
+        done = self.check_terminal_states()
+        return obs, done
+
+    def step(self, actions: Args):
+        if self.step_fn is None:
+            raise RuntimeError('Simulator was not compiled.')
+
+        rddl = self.rddl
+        keep_tensors = self.keep_tensors
+        sim_actions = self._prepare_actions_for_torch(actions)
+        self.subs, log, self.model_params = self.step_fn(
+            self.key, sim_actions, self.subs, self.model_params)
+        self.handle_error_code(log.get('error', 0), 'transition')
+        reward = log['reward']
+
+        self.state = {}
+        for (state, next_state) in rddl.next_state.items():
+            self.subs[state] = self.subs[next_state]
+
+            raw_state_values = self.subs[state]
+            state_values = raw_state_values
+            if self.objects_as_strings:
+                ptype = rddl.variable_ranges[state]
+                if ptype not in RDDLValueInitializer.NUMPY_TYPES:
+                    state_values = rddl.index_to_object_string_array(
+                        ptype, self._to_ground_value(raw_state_values))
+            if keep_tensors:
+                self.state[state] = state_values
+            else:
+                self.state.update(rddl.ground_var_with_values(
+                    state, self._to_ground_value(state_values)))
+
+        if self._pomdp:
+            obs = {}
+            for var in rddl.observ_fluents:
+                raw_obs_values = self.subs[var]
+                obs_values = raw_obs_values
+                if self.objects_as_strings:
+                    ptype = rddl.variable_ranges[var]
+                    if ptype not in RDDLValueInitializer.NUMPY_TYPES:
+                        obs_values = rddl.index_to_object_string_array(
+                            ptype, self._to_ground_value(raw_obs_values))
+                if keep_tensors:
+                    obs[var] = obs_values
+                else:
+                    obs.update(rddl.ground_var_with_values(
+                        var, self._to_ground_value(obs_values)))
+        else:
+            obs = self.state
+
+        done = self._to_bool(log.get('termination', False))
+        return obs, reward, done
+
+    # ------------------------------------------------------------------
+    # internals
+    # ------------------------------------------------------------------
+
+    def _prepare_actions_for_torch(self, actions: Optional[Args]) -> Dict[str, Any]:
+        """ make sure the actions are in the right format for the simulator,
+          and convert them to torch tensors if needed."""
+        if not actions:
+            return {k: self._clone_value(v) for (k, v) in self.noop_actions.items()}
+
+        if all(action in self.noop_actions for action in actions):
+            sim_actions = {k: self._clone_value(v) for (k, v) in self.noop_actions.items()}
+            for (action, value) in actions.items():
+                sim_actions[action] = self._coerce_like(value, self.noop_actions[action], action)
+            return sim_actions
+
+        numpy_actions = {
+            k: self._to_numpy(v) if isinstance(v, torch.Tensor) else v
+            for (k, v) in actions.items()
+        }
+        prepared = super(TorchRDDLSimulator, self).prepare_actions_for_sim(numpy_actions)
+        sim_actions = {}
+        for (action, value) in prepared.items():
+            sim_actions[action] = self._coerce_like(value, self.noop_actions[action], action)
+        return sim_actions
+
+    def _coerce_like(self, value: Any, reference: Any, action_name: str) -> Any:
+        if isinstance(reference, torch.Tensor):
+            if isinstance(value, torch.Tensor):
+                tensor = value
+            else:
+                tensor = torch.as_tensor(value, device=self.device)
+            tensor = tensor.to(device=reference.device)
+            if tensor.shape != reference.shape:
+                raise RDDLInvalidActionError(
+                    f'Value for action-fluent <{action_name}> must be of shape '
+                    f'{tuple(reference.shape)}, got {tuple(tensor.shape)}.')
+            if reference.dtype == torch.bool:
+                return tensor.bool()
+            if reference.dtype.is_floating_point:
+                return tensor.to(dtype=reference.dtype)
+            return tensor.to(dtype=reference.dtype)
+        return value
+
+    @staticmethod
+    def _to_numpy(value: torch.Tensor):
+        tensor = value.detach()
+        if tensor.device.type != 'cpu':
+            tensor = tensor.cpu()
+        return tensor.numpy()
+
+    @classmethod
+    def _to_ground_value(cls, value: Any):
+        if isinstance(value, torch.Tensor):
+            return cls._to_numpy(value)
+        return value
+
+    @staticmethod
+    def _to_bool(value: Any) -> bool:
+        if isinstance(value, torch.Tensor):
+            return bool(torch.all(value.bool()).item())
+        if isinstance(value, np.ndarray):
+            return bool(np.all(value))
+        return bool(value)
+
+    @staticmethod
+    def _clone_value(value: Any) -> Any:
+        """Create a safe copy of a value before using it inside the simulator.
+
+        The simulator reuses values that originate from the compiled model
+        (for example initial state values or model parameters). 
+        During simulation,these values may be modified in-place when the state is updated.
+
+        If we reused the same objects coming from the compiler, those in-place
+        modifications would also change the compiler's internal data structures.
+        This would corrupt the original model definition and could lead to
+        incorrect behavior in future simulations.
+
+        To avoid this shared-memory issue, we create an explicit copy of the value
+        before using it in the simulator.
+
+        Copy strategy:
+        - torch.Tensor → clone() to allocate a new tensor with the same data
+        - numpy.ndarray → copy() to avoid sharing the same memory buffer
+        - other types → deepcopy() as a safe fallback
+
+        This ensures that the simulator operates on its own independent state
+        and does not accidentally modify the compiler's data.
+        """
+        if isinstance(value, torch.Tensor):
+            return value.clone()
+        #if isinstance(value, np.ndarray):
+            return value.copy()
+        return deepcopy(value)
+
+    @classmethod
+    def _clone_structure(cls, value: Any) -> Any:
+        """ this function is used to clone the structure of the init_values and model_params, 
+        which can be nested dicts/lists/tuples of tensors/arrays/values."""
+        if isinstance(value, dict):
+            return {k: cls._clone_structure(v) for (k, v) in value.items()}
+        if isinstance(value, list):
+            return [cls._clone_structure(v) for v in value]
+        if isinstance(value, tuple):
+            return tuple(cls._clone_structure(v) for v in value)
+        return cls._clone_value(value)
 
 
-def main():
-
-    base_path = "/Users/yuvalaroosh/Documents/SDRP/SDRP"
-    domain_path   = os.path.join(base_path, "instances", "reservoir", "domain.rddl")
-    instance_path = os.path.join(base_path, "instances", "reservoir", "instance_1.rddl")
-    sim = Simulator(domain_path, instance_path)
-    print(f'############# horizon : {sim.horizon}    ##############')
-    print(f'############# model : {sim.model}    ##############')
-    print(f'############# fn step : {sim.fn_step}    ##############')
-
-
-
-
-
-if __name__ == "__main__":
-    main()
+# Backward-compatible alias used in earlier local experiments.
+Simulator = TorchRDDLSimulator
