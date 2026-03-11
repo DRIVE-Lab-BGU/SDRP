@@ -27,8 +27,13 @@ x = torch.tensor([114.4, 21.4], requires_grad=True)
 
 class Simulator():
     def __init__(self, domain_path  , instance_path , state = None , action = None , model_params = None):
-        """the init ger paths to the rddl domain and instance 
+        """
+        the simulator get the model( rddl path?). and obs(subs) and the action. do one step and return the reward obs.
+        
+        
+        the init ger paths to the rddl domain and instance 
         files and parse them to create the model"""
+        
 
         reader = RDDLReader(domain_path, instance_path)
         domain = reader.rddltxt
