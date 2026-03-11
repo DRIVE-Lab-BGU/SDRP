@@ -295,6 +295,10 @@ class TorchRDDLSimulator(RDDLSimulator):
 
     @classmethod
     def _to_ground_value(cls, value: Any):
+        # Convert Torch tensors to NumPy before grounding variables.
+        # pyRDDLGym grounding utilities expect NumPy arrays and may fail
+        # with autograd-enabled tensors. This also detaches values from
+        # the computation graph since observations do not require gradients.
         if isinstance(value, torch.Tensor):
             return cls._to_numpy(value)
         return value
