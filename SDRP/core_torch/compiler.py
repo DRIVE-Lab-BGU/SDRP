@@ -260,6 +260,7 @@ class TorchRDDLCompiler:
 
             # set the next state to the current state
             for (state, next_state) in rddl.next_state.items():
+                # here the state update to the next state
                 subs[state] = subs[next_state]
 
             
