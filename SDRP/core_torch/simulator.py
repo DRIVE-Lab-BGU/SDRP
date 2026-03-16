@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ast import Return
 import time
 from copy import deepcopy
 from typing import Any, Dict, Optional, Union
@@ -87,6 +88,10 @@ class TorchRDDLSimulator(RDDLSimulator):
 
         self.subs = self._clone_structure(self.init_values)
         self.state = None
+        
+        # take the fluent actions and their initial values, 
+        # and create a dict of noop actions that we can use as a default when no actions 
+        # are provided to the step function.
         self.noop_actions = {
             var: self._clone_value(values)
             for (var, values) in self.init_values.items()
@@ -95,9 +100,6 @@ class TorchRDDLSimulator(RDDLSimulator):
         #####
         self.grounded_noop_actions = rddl.ground_vars_with_values(self.noop_actions)
         self.grounded_action_ranges = rddl.ground_vars_with_value(rddl.action_ranges)
-        self._pomdp = bool(rddl.observ_fluents)
-        #####
-
         self.invariant_names = [f'Invariant {i}' for i in range(len(rddl.invariants))]
         self.precond_names = [f'Precondition {i}' for i in range(len(rddl.preconditions))]
         self.terminal_names = [f'Termination {i}' for i in range(len(rddl.terminations))]
@@ -154,7 +156,10 @@ class TorchRDDLSimulator(RDDLSimulator):
         return reward
 
     def reset(self):
-        """ Reset the simulator to the initial state. 
+        """ 
+        Same as in the RDDLSimulator,
+
+        Reset the simulator to the initial state. 
         Returns the initial observation and a boolean indicating whether the initial state is terminal."""
         if self.compiler is None:
             raise RuntimeError('Simulator was not compiled.')
@@ -179,15 +184,7 @@ class TorchRDDLSimulator(RDDLSimulator):
                 self.state.update(rddl.ground_var_with_values(
                     state, self._to_ground_value(state_values)))
 
-        if self._pomdp:
-            if keep_tensors:
-                obs = {var: None for var in rddl.observ_fluents}
-            else:
-                obs = {}
-                for var in rddl.observ_fluents:
-                    obs.update(rddl.ground_var_with_value(var, None))
-        else:
-            obs = self.state
+        obs = self.state
 
         done = self.check_terminal_states()
         return obs, done
@@ -205,9 +202,14 @@ class TorchRDDLSimulator(RDDLSimulator):
         reward = log['reward']
 
         self.state = {}
-        for (state, next_state) in rddl.next_state.items():
-            self.subs[state] = self.subs[next_state]
 
+        # Convert internal simulator values to a user-readable state.
+        # Internally object-valued fluents are stored as numeric indices for efficient computation.
+        # If objects_as_strings=True, these indices are converted back to their object names
+        # before returning the state to the user.
+
+        # Convert internal indices to readable object names if needed (e.g. 2 → "room_c").
+        for state in rddl.state_fluents:
             raw_state_values = self.subs[state]
             state_values = raw_state_values
             if self.objects_as_strings:
@@ -215,31 +217,20 @@ class TorchRDDLSimulator(RDDLSimulator):
                 if ptype not in RDDLValueInitializer.NUMPY_TYPES:
                     state_values = rddl.index_to_object_string_array(
                         ptype, self._to_ground_value(raw_state_values))
+                    
             if keep_tensors:
                 self.state[state] = state_values
+           
             else:
+                #  conver to numpy and ground the state variables to 
+                # get a dict of grounded state variable names to their values.
                 self.state.update(rddl.ground_var_with_values(
                     state, self._to_ground_value(state_values)))
-
-        if self._pomdp:
-            obs = {}
-            for var in rddl.observ_fluents:
-                raw_obs_values = self.subs[var]
-                obs_values = raw_obs_values
-                if self.objects_as_strings:
-                    ptype = rddl.variable_ranges[var]
-                    if ptype not in RDDLValueInitializer.NUMPY_TYPES:
-                        obs_values = rddl.index_to_object_string_array(
-                            ptype, self._to_ground_value(raw_obs_values))
-                if keep_tensors:
-                    obs[var] = obs_values
-                else:
-                    obs.update(rddl.ground_var_with_values(
-                        var, self._to_ground_value(obs_values)))
-        else:
-            obs = self.state
+        
+        obs = self.state
 
         done = self._to_bool(log.get('termination', False))
+        
         return obs, reward, done
 
     # ------------------------------------------------------------------
@@ -247,8 +238,8 @@ class TorchRDDLSimulator(RDDLSimulator):
     # ------------------------------------------------------------------
 
     def _prepare_actions_for_torch(self, actions: Optional[Args]) -> Dict[str, Any]:
-        """ make sure the actions are in the right format for the simulator,
-          and convert them to torch tensors if needed."""
+        """ make sure the actions are in the right format for the Torch simulator,
+          and also clone them."""
         if not actions:
             return {k: self._clone_value(v) for (k, v) in self.noop_actions.items()}
 
@@ -315,25 +306,16 @@ class TorchRDDLSimulator(RDDLSimulator):
     def _clone_value(value: Any) -> Any:
         """Create a safe copy of a value before using it inside the simulator.
 
-        The simulator reuses values that originate from the compiled model
-        (for example initial state values or model parameters). 
-        During simulation,these values may be modified in-place when the state is updated.
+                Return a safe copy of a value before using it in the simulator.
+                The simulator updates its internal state in-place. If the state shares
+                memory with the compiler's initial values, those values would be modified.
 
-        If we reused the same objects coming from the compiler, those in-place
-        modifications would also change the compiler's internal data structures.
-        This would corrupt the original model definition and could lead to
-        incorrect behavior in future simulations.
+                Example (reservoir domain):
+                subs["rlevel"] = compiler.init_values["rlevel"]
+                subs["rlevel"][0] -= release[0]   # water released
+                # now compiler.init_values["rlevel"] also changed!
 
-        To avoid this shared-memory issue, we create an explicit copy of the value
-        before using it in the simulator.
-
-        Copy strategy:
-        - torch.Tensor → clone() to allocate a new tensor with the same data
-        - numpy.ndarray → copy() to avoid sharing the same memory buffer
-        - other types → deepcopy() as a safe fallback
-
-        This ensures that the simulator operates on its own independent state
-        and does not accidentally modify the compiler's data.
+            Cloning/copying ensures the simulator modifies only its own state.
         """
         if isinstance(value, torch.Tensor):
             return value.clone()
@@ -343,7 +325,8 @@ class TorchRDDLSimulator(RDDLSimulator):
 
     @classmethod
     def _clone_structure(cls, value: Any) -> Any:
-        """ this function is used to clone the structure of the init_values and model_params, 
+        """ this function is used to clone the structure 
+        of the init_values and model_params, 
         which can be nested dicts/lists/tuples of tensors/arrays/values."""
         if isinstance(value, dict):
             return {k: cls._clone_structure(v) for (k, v) in value.items()}
