@@ -1,7 +1,7 @@
 """Torch-native simulator mirroring the JAX simulator interface."""
 
 from __future__ import annotations
-
+from Noise import noise
 from ast import Return
 import time
 from copy import deepcopy
@@ -34,6 +34,7 @@ class TorchRDDLSimulator(RDDLSimulator):
     """Single-step torch simulator used by rollout/training loops."""
 
     def __init__(self, rddl: RDDLLiftedModel,
+                 noise = None,
                  key: Optional[torch.Generator]=None,
                  raise_error: bool=True,
                  logger: Optional[Logger]=None,
@@ -51,6 +52,10 @@ class TorchRDDLSimulator(RDDLSimulator):
         self.device = torch.device(device) if device is not None else torch.device('cpu')
         self.compiler: Optional[TorchRDDLCompiler] = None
         self.step_fn = None
+        if noise is None:
+            self.noise = {"type": "constant", "value": 0}
+        else:
+            self.noise = noise
 
         super(TorchRDDLSimulator, self).__init__(
             rddl=rddl, logger=logger,
@@ -189,13 +194,36 @@ class TorchRDDLSimulator(RDDLSimulator):
         done = self.check_terminal_states()
         return obs, done
 
-    def step(self, actions: Args):
+    def step(self, actions: Args , num_step=0):
         if self.step_fn is None:
             raise RuntimeError('Simulator was not compiled.')
 
         rddl = self.rddl
         keep_tensors = self.keep_tensors
+
         sim_actions = self._prepare_actions_for_torch(actions)
+        
+        n = noise(action_dim = len(sim_actions) , 
+                  max_action = max(self.grounded_action_ranges.values()) , 
+                  horizon = self.rddl.horizon )
+        
+        if self.noise["type"] == "constant":
+            the_constant = self.noise["value"]
+            noise4action = n.constant_noise(the_constant)
+        
+        if self.noise["type"] == "smaller_1":
+            start_noise = self.noise["value"][0]
+            end_noise = self.noise["value"][1]
+            noise4action = n.get_smaller_1( start_noise = start_noise , end_noise = end_noise , step = num_step )
+        
+        if self.noise["type"] == "smaller_2":
+            start_noise = self.noise["value"][0]
+            end_noise = self.noise["value"][1]
+            noise4action = n.get_smaller_2( start_noise = start_noise, end_noise = end_noise , step = num_step )
+
+        sim_actions = {k: v +torch.normal(mean=0.0, std=noise4action, size=v.shape) for (k, v) in sim_actions.items()}
+
+
         self.subs, log, self.model_params = self.step_fn(
             self.key, sim_actions, self.subs, self.model_params)
         self.handle_error_code(log.get('error', 0), 'transition')

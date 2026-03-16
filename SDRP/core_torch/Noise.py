@@ -1,4 +1,4 @@
-class noise(object):
+class noise():
     def __init__(self, action_dim, max_action, horizon):
         self.action_dim = action_dim
         self.max_action = max_action
@@ -10,8 +10,9 @@ class noise(object):
     def get_smaller_2(self , start_noise , end_noise , step   ):    
         noise  = max( (step / self.horizon)*start_noise  , end_noise)
         return noise
-
-    def constant_noise(self , noise):
+    
+    @staticmethod
+    def constant_noise( noise = 0 ):
         return noise
     
     def get_noise(self):
