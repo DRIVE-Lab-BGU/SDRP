@@ -10,7 +10,6 @@ class noise():
     def get_smaller_2(self , start_noise , end_noise , step   ):    
         noise  = max( (step / self.horizon)*start_noise  , end_noise)
         return noise
-    
     @staticmethod
     def constant_noise( noise = 0 ):
         return noise
