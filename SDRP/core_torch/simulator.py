@@ -1,7 +1,9 @@
-"""Torch-native simulator mirroring the JAX simulator interface."""
 
 from __future__ import annotations
-from Noise import noise
+try:
+    from .Noise import noise
+except ImportError:  # pragma: no cover - fallback for script-style execution
+    from Noise import noise
 from ast import Return
 import time
 from copy import deepcopy
@@ -215,7 +217,7 @@ class TorchRDDLSimulator(RDDLSimulator):
             start_noise = self.noise["value"][0]
             end_noise = self.noise["value"][1]
             noise4action = n.get_smaller_1( start_noise = start_noise , end_noise = end_noise , step = num_step )
-        
+            print(f"noise for action is {noise4action}")
         if self.noise["type"] == "smaller_2":
             start_noise = self.noise["value"][0]
             end_noise = self.noise["value"][1]
