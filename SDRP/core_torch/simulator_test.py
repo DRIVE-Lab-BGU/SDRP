@@ -60,7 +60,7 @@ def jax_single_step(model) -> None:
 def torch_single_step(model) -> None:
     print(f"=== TorchRDDLSimulator.step | {len(actions) } steps ===")
     # here the simulator compiles the model 
-    sim = TorchRDDLSimulator(model, logic=ExactLogic() , keep_tensors=True , noise={"type": "smaller_1", "value": [2, 1]} )
+    sim = TorchRDDLSimulator(model, logic=ExactLogic() , keep_tensors=True )#{"type": "smaller_1", "value": [2, 1]} 
     sim.seed(0)
     sim.reset()
     i = 0
@@ -91,12 +91,11 @@ def main() -> None:
     env = pyRDDLGym.make(domain=DOMAIN, instance=INSTANCE, vectorized=True)
     model = env.model
     torch_single_step(model)
-    exit(0)  # we exit here to avoid running the torch simulator, which is not the focus of this test.
+    # we exit here to avoid running the torch simulator, which is not the focus of this test.
     jax_single_step(model)
     torch_single_step(model)
     import numpy as np
-    
-    print(f"reward difference: {np.array(dif_list['reward']['jax']) - np.array(dif_list['reward']['torch'])}")
+
 
 
     obs_diff = []
