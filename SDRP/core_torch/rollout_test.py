@@ -35,6 +35,7 @@ actions = [
 
 def rollout_step_by_step(model) -> None:
     print(f"=== TorchRollout.step | {len(actions)} steps ===")
+    # i horizon is none its take from the rddl file
     rollout = TorchRollout(model, horizon=len(actions), logic=ExactLogic())
     rollout.cell.key.manual_seed(0)
     policy = random_policy(model, logic=None)
@@ -56,7 +57,7 @@ def rollout_step_by_step(model) -> None:
 
 def rollout_forward(model) -> None:
     print(f"=== TorchRollout.forward | {len(actions)} steps ===")
-    rollout = TorchRollout(model, horizon=len(actions), logic=ExactLogic())
+    rollout = TorchRollout(model, horizon=None, logic=ExactLogic())
     rollout.cell.key.manual_seed(0)
 
     scripted_actions = copy.deepcopy(actions)
@@ -66,12 +67,17 @@ def rollout_forward(model) -> None:
         if step < len(scripted_actions):
             return scripted_actions[step]
         return rollout.noop_actions
+    print(f"scripted policy actions = {scripted_policy}")
+    rp = random_policy(model, logic=None)
+    def random_policy_wrapper(obs, step,state=None):
+        return rp.get_action(obs=obs, num_step=step) , state
 
-    trace = rollout(scripted_policy)
+    trace = rollout(random_policy_wrapper)
     print(f"num observations = {len(trace.observations)}")
-    print(f"returns = {float(trace.return_)}")
+    #print(f"observations = {trace.observations}")
+    print(f"cumulative reward = {sum(trace.rewards)}")
     print(f"final observation = {trace.final_observation}")
-
+    exit(0)  # we exit here to avoid running the simulator, which is not the focus of this test.
 
 def compare_rollout_to_simulator(model) -> None:
     print(f"=== Rollout vs Simulator | {len(actions)} steps ===")

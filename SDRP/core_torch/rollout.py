@@ -69,6 +69,7 @@ class TorchRolloutCell(nn.Module):
         self.rddl = rddl_model
         self.logger = logger
         self.device = torch.device(device) if device is not None else torch.device('cpu')
+        # for example - logic 
         self.compiler_args = compiler_args
 
         compiled = TorchRDDLCompiler(rddl_model, logger=logger, **compiler_args)
@@ -77,6 +78,7 @@ class TorchRolloutCell(nn.Module):
         self.compiler = compiled
         self.step_fn = compiled.compile_transition(cache_path_info=False)
         self.init_values = self._clone_structure(compiled.init_values)
+        # paramter for logic
         self.model_params = self._clone_structure(compiled.model_params)
         self.observed_fluents = tuple(
             rddl_model.observ_fluents if rddl_model.observ_fluents else rddl_model.state_fluents
