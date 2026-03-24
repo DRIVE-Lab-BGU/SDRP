@@ -26,8 +26,8 @@ from pyRDDLGym_jax.core import (simulator,
                                 compiler,
                                 planner)
 
-DOMAIN = ROOT / "instances" / "reservoir" / "domain.rddl"
-INSTANCE = ROOT / "instances" / "reservoir" / "instance_1.rddl"
+DOMAIN = ROOT / "instances" / "race_car" / "domain.rddl"
+INSTANCE = ROOT / "instances" / "race_car" / "instance_1.rddl"
 print(f"DOMAIN={DOMAIN}")
 print(f"INSTANCE={INSTANCE}")
 actions = [ 
@@ -38,6 +38,8 @@ actions = [
  { 'release': [5, 3],}   ,   
  { 'release': [6, 3],}   
 ]
+
+from policies import random_policy
 
 dif_list = {"reward":{"jax": [], "torch": []} , "obs":{"jax": [], "torch": []} }
 def jax_single_step(model) -> None:
@@ -57,21 +59,23 @@ def jax_single_step(model) -> None:
         dif_list["reward"]["jax"].append(float(reward))
         dif_list["obs"]["jax"].append(obs)
 # we exit here to avoid running the torch simulator, which is not the focus of this test.
-def torch_single_step(model) -> None:
-    print(f"=== TorchRDDLSimulator.step | {len(actions) } steps ===")
+def torch_single_step(model, num_steps) -> None:
+    print(f"=== TorchRDDLSimulator.step | {num_steps} steps ===")
     # here the simulator compiles the model 
     sim = TorchRDDLSimulator(model, logic=ExactLogic() , keep_tensors=True )#{"type": "smaller_1", "value": [2, 1]} 
     sim.seed(0)
     sim.reset()
     i = 0
-    for action in actions:
+    for _ in range(num_steps):
         i += 1
+        rnd_policy = random_policy(model, logic=None)
+        action = rnd_policy.get_action()
         obs, reward, done = sim.step(action, i)
-
         print(f"the step number{i} observation is {obs}")
         print(f"reward={float(reward)} done={done}")
         dif_list["reward"]["torch"].append(float(reward))
         dif_list["obs"]["torch"].append(obs)
+        return num_steps
 def main() -> None:
     #################################################################################
     ###### we can also run the torch simulator using the lifted model directly ######
@@ -90,10 +94,11 @@ def main() -> None:
 
     env = pyRDDLGym.make(domain=DOMAIN, instance=INSTANCE, vectorized=True)
     model = env.model
-    torch_single_step(model)
+
+    torch_single_step(model , num_steps = 8)
     # we exit here to avoid running the torch simulator, which is not the focus of this test.
-    jax_single_step(model)
-    torch_single_step(model)
+    #jax_single_step(model)
+
     import numpy as np
 
 
@@ -103,8 +108,8 @@ def main() -> None:
         diff_t1 = float(jax_obs["rlevel___t1"]) - float(torch_obs["rlevel"][0])
         diff_t2 = float(jax_obs["rlevel___t2"]) - float(torch_obs["rlevel"][1])
         obs_diff.append([diff_t1, diff_t2])
-
+    print(f"number of steps {len(obs_diff)}")
     print("observation difference:")
-    print(np.array(obs_diff))
+    # print(np.array(obs_diff))
 if __name__ == "__main__":
     main()
