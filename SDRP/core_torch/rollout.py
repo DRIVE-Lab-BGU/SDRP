@@ -156,6 +156,13 @@ class TorchRolloutCell(nn.Module):
         return next_subs, next_obs, reward, done, next_model_params
 
     def prepare_actions(self, actions: Optional[Dict[str, Any]]=None) -> Dict[str, Any]:
+        """ This method prepares the actions to be passed to the step function.
+            its:
+            - cloning the actions to avoid modifying the original input.
+                - validating that the action names are correct and exist in the noop actions template.
+            - coercing the action values to the tensor type and shape based on the noop actions template.
+            - if no actions are provided, it returns a clone of the noop actions template. 
+            """
         if actions is None:
             return {name: self._clone_value(value) for (name, value) in self.noop_actions.items()}
 
@@ -171,11 +178,22 @@ class TorchRolloutCell(nn.Module):
 
     def _coerce_obs_value(self, value: Any, name: str) -> torch.Tensor:
         del name
+        """
+        This method coerces the observation value to a tensor, 
+        and also clones it if it's already a tensor to avoid in-place modifications.
+        """
         if isinstance(value, torch.Tensor):
             return value.clone()
         return self._ensure_tensor(value)
 
     def _coerce_like(self, value: Any, reference: Any, name: str) -> Any:
+        """
+        This method coerces the action value to be like the reference tensor in terms of type and shape.
+         - if the value is not a tensor, it converts it to a tensor with the same device as the reference.
+         - if the value is already a tensor, it checks that its shape matches the reference and converts its dtype and device to match the reference.
+         - if the reference is not a tensor, it returns the value as is (assuming it's a compatible type).
+         - this method also raises an error if the provided value has a different shape than the reference tensor.
+         """
         if isinstance(reference, torch.Tensor):
             if isinstance(value, torch.Tensor):
                 tensor = value
@@ -215,6 +233,7 @@ class TorchRolloutCell(nn.Module):
 
     @classmethod
     def _clone_structure(cls, value: Any) -> Any:
+        """ This method recursively clones a nested structure of dicts, lists, tuples, and tensors."""
         if isinstance(value, dict):
             return {k: cls._clone_structure(v) for (k, v) in value.items()}
         if isinstance(value, list):
@@ -225,7 +244,8 @@ class TorchRolloutCell(nn.Module):
 
 
 class TorchRollout(nn.Module):
-    """Unroll the environment like an RNN over a fixed horizon."""
+    """This class manages the full rollout process, 
+    including maintaining the hidden state across steps and interfacing with the policy."""
 
     def __init__(self,
                  rddl_model: RDDLLiftedModel,
@@ -317,9 +337,35 @@ class TorchRollout(nn.Module):
                      observation: TensorDict,
                      step: int,
                      policy_state: Any) -> Tuple[TensorDict, Any]:
+        """
+        Docstring for _call_policy
+        
+        :param policy: 
+        can be a spesific function or 
+        a nn.Module with forward method e.g. a neural network policy.
+        The policy is expected to return either just the action, or a tuple of (action, next_policy_state). 
+        the function should take at least the observation as input,
+        and can also take the step number and policy state if needed.
+
+
+        :param observation: the spesific state observation at the current step of the rollout, which is passed to the policy to decide on the action.
+
+     
+        :param step: if the policy needs the current step number of the rollout, it can use this parameter. This is useful for policies that change their behavior over time, such as epsilon-greedy policies or policies with a learning component.
+
+        :type step: int
+        
+        :param policy_state: if the policy maintains an internal state across steps (e.g., for RNN-based policies or policies that learn online),
+        this parameter can be used to pass that state from one step to the next. 
+        The policy is expected to return the next policy state along with the action if it uses this parameter.
+        """
+    
         target = policy.forward if isinstance(policy, nn.Module) else policy
+        # signature inspection to determine how many arguments the policy expects, and call accordingly
         signature = inspect.signature(target)
+        #parameters = signature.parameters
         params = list(signature.parameters.values())
+        # check if the policy has *args to determine how to call it
         has_varargs = any(param.kind == inspect.Parameter.VAR_POSITIONAL for param in params)
         positional = [
             param for param in params
