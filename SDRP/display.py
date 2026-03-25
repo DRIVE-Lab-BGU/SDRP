@@ -5,6 +5,7 @@ import matplotlib as mpl
 mpl.use("MacOSX")  # on macOS; or "TkAgg" / "QtAgg"
 import matplotlib.pyplot as plt
 from pathlib import Path
+import numpy as np
 import os
 
 header = ['epoch', 'eval_reward', 'eval_std']
@@ -17,17 +18,24 @@ header = ['epoch', 'eval_reward', 'eval_std']
 # file_names = ['HVAC_instance5_noise0_100.csv', 'HVAC_instance5_noise3_100.csv']
 # file_names = ['UAV_instance2_noise0_100.csv', 'UAV_instance2_noise3_100.csv']
 
-file_names = ['HVAC_instance1_noise0.csv', 'HVAC_instance1_noise1.csv', 'HVAC_instance1_noise0_IS.csv','HVAC_instance1_noise3.csv', 'HVAC_instance1_noise3_IS.csv']#, 'HVAC_instance1_noise3.csv']
-legend = ['no noise', 'noise1', 'noise1_IS', 'noise3', 'noise3_IS']
+# file_names = ['HVAC_instance1_noise0.csv', 'HVAC_instance1_noise1.csv']#, 'HVAC_instance1_noise0_IS.csv','HVAC_instance1_noise3.csv', 'HVAC_instance1_noise3_IS.csv']#, 'HVAC_instance1_noise3.csv']
+# legend = ['Backprop', 'noise1']#, 'noise1_IS', 'noise3', 'noise3_IS']
+
+file_names = ['HVAC_instance1_noise0_IS.csv', 'HVAC_instance1_noise5_IS.csv', 'HVAC_instance1_noise7_IS.csv']
+legend = ['no noise', 'noise5', 'noise7']
+
+# file_names = ['HVAC_instance1_noise0.csv']
+# legend = ['Backprop']
 # file_names = ['reservoir_instance3_noise0_1000.csv', 'reservoir_instance3_noise3_1000.csv']
-# file_names = ['reservoir_instance3_noise3_IS.csv', 'reservoir_instance3_noise5_IS.csv']
+# file_names = ['reservoir_instance5_stochastic0_500.csv', 'reservoir_instance5_noise3_IS.csv', 'reservoir_instance5_noise5_IS.csv', 'reservoir_instance5_noise7_IS.csv']
 # file_names = ['reservoir_instance3_noise3_IS.csv', 'reservoir_instance3_noise3_1000.csv']
 # file_names = ['reservoir_instance3_noise0_1000.csv', 'reservoir_instance3_noise3_1000.csv', 'reservoir_instance3_noise3_IS.csv', 'reservoir_instance3_noise5_IS.csv','reservoir_instance3_noise5_noIS.csv']
 # file_names = ['reservoir_instance5_stochastic0_500.csv','reservoir_instance5_noise3.csv','reservoir_instance5_noise5.csv','reservoir_instance5_noise7.csv',
 #               'reservoir_instance5_noise3_IS.csv','reservoir_instance5_noise5_IS.csv','reservoir_instance5_noise7_IS.csv']
+# legend = ['no noise','noise3', 'noise5', 'noise7']
 # legend = ['no noise','noise3', 'noise5','noise7','noise3IS', 'noise5IS','noise7IS']
 # legend = ['w/o exploration noise', 'noise=3, w/o IS', 'noise=3, w IS', 'noise=5, w IS', 'noise=5, w/o IS']
-title = "Multi-zone HVAC Control Problem"
+title = "Multi-zone HVAC Control - 2 zones, 3 heaters"
 # legend = []
 base_path = os.path.dirname(os.path.abspath(__file__))
 
@@ -80,9 +88,15 @@ for fpath, label in zip(files, legend):
   lower = [v - e for v, e in zip(vals, stds)]
   ax.fill_between(epochs[:cutoff], lower[:cutoff], upper[:cutoff], alpha=0.3, label="_nolegend_")
 
+random = -1119993.4009455156*np.ones([10000,1])
+# line, = ax.plot(epochs[:cutoff], random[:cutoff], marker="s", linestyle="-")
+# ax.fill_between(epochs[:cutoff], lower[:cutoff], upper[:cutoff], alpha=0.3, label="_nolegend_")
+# line_handles.append(line)
+# legend.append('random')
+
 ax.set_xlabel("Episode", fontsize=16)
 ax.set_ylabel("Eval reward", fontsize=16)
-# ax.set_title(title)
+ax.set_title(title)
 ax.grid(True, linestyle="--", alpha=0.6)
 fig.tight_layout()
 
