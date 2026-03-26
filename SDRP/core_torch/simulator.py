@@ -309,6 +309,7 @@ class TorchRDDLSimulator(RDDLSimulator):
 
     @staticmethod
     def _to_numpy(value: torch.Tensor):
+        #  probelm: if the tensor requires grad,the dethac make problems.
         tensor = value.detach()
         if tensor.device.type != 'cpu':
             tensor = tensor.cpu()

@@ -1,11 +1,13 @@
 """Minimal rollout examples using the torch rollout wrapper and simulator."""
 
 import copy
+from email import policy
 import sys
 from pathlib import Path
 
 import pyRDDLGym
 import torch
+
 from policies import random_policy
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -72,7 +74,7 @@ def rollout_forward(model) -> None:
     def random_policy_wrapper(obs, step,state=None):
         return rp.get_action(obs=obs, num_step=step) , state
 
-    trace = rollout(random_policy_wrapper)
+    trace = rollout(policy=random_policy_wrapper)
     print(f"num observations = {len(trace.observations)}")
     #print(f"observations = {trace.observations}")
     print(f"cumulative reward = {sum(trace.rewards)}")
@@ -127,9 +129,19 @@ def main() -> None:
     env = pyRDDLGym.make(domain=DOMAIN, instance=INSTANCE, vectorized=True)
     model = env.model
 
-    rollout_step_by_step(model)
-    rollout_forward(model)
-    compare_rollout_to_simulator(model)
+    #rollout_step_by_step(model)
+    #rollout_forward(model)
+    rp = random_policy(model, logic=None)
+    def random_policy_wrapper(obs, step,state=None):
+        return rp.get_action(obs=obs, num_step=step) , state
+    optimizer = torch.optim.Adam(rp.parameters(), lr=0.01)
+    trace = TorchRollout(policy=random_policy_wrapper)
+    loss = -trace.return_
+    loss.backward()
+    optimizer.step()
+    #compare_rollout_to_simulator(model)
+    import torch
+import torch.nn as nn
 
 
 if __name__ == "__main__":

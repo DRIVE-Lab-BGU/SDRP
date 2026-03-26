@@ -12,6 +12,7 @@ from torch import nn
 
 try:
     from .logic import FuzzyLogic
+    from .logic import ExactLogic
     from .rollout import TorchRollout
     from .simulator import TorchRDDLSimulator
 except ImportError:  # pragma: no cover - fallback for script-style execution
@@ -19,6 +20,7 @@ except ImportError:  # pragma: no cover - fallback for script-style execution
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
     from core_torch.logic import FuzzyLogic
+    from core_torch.logic import ExactLogic
     from core_torch.rollout import TorchRollout
     from core_torch.simulator import TorchRDDLSimulator
 
@@ -133,11 +135,11 @@ class Train:
                 
             )
         self.policy = policy
-        self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=lr)
+        self.optimizer = torch.optim.RMSprop(self.policy.parameters(), lr=lr)
 
     def train_trajectory(self,
-                         iterations: int=200,
-                         print_every: int=20) -> List[Dict[str, float]]:
+                         iterations: int=10,
+                         print_every: int=1) -> List[Dict[str, float]]:
         history: List[Dict[str, float]] = []
         self.policy.train()
 
@@ -150,6 +152,10 @@ class Train:
             loss = -objective
 
             loss.backward()
+            # print("###############################")
+            # print("mu grad:", self.policy.mu.grad)
+            # print("log_std grad:", self.policy.log_std.grad)
+            # print("###############################")
             self.optimizer.step()
 
             metrics = {
@@ -180,7 +186,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Train a torch policy through differentiable rollouts.')
     parser.add_argument('--domain', type=Path, default=None, help='Path to the RDDL domain file.')
     parser.add_argument('--instance', type=Path, default=None, help='Path to the RDDL instance file.')
-    parser.add_argument('--iterations', type=int, default=100, help='Number of gradient updates.')
+    parser.add_argument('--iterations', type=int, default=20, help='Number of gradient updates.')
     parser.add_argument('--lr', type=float, default=1e-2, help='Adam learning rate.')
     parser.add_argument('--seed', type=int, default=0, help='Torch and rollout RNG seed.')
     parser.add_argument(
@@ -193,7 +199,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '--print-every',
         type=int,
-        default=20,
+        default=5,
         help='How often to print training metrics.',
     )
     return parser
